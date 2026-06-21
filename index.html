@@ -214,21 +214,29 @@ const ATHLETIC={sub:"Sunday · ~30 min · rotate A→B→C each week · log what
 
 // ─── Module 2: Morning Routine seed (user edits these in-app; never hard-coded) ──
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const ROUTINE_VERSION=2; // bump to re-seed the default steps onto existing installs
-// Day-aware order. On Thu/Sun the haircare flow is two showers around the masque sit;
+const ROUTINE_VERSION=3; // bump to re-seed the default steps onto existing installs
+// Day-aware order. Haircare is a two-shower flow (Thu + Mon) around the masque sit;
 // the everyday cleanse+cold shower runs only on non-haircare days so you never shower 3×.
+// EVERY step is a HARD time cap (the whole point of the app) — only "read" uses a soft target.
 const ROUTINE_SEED=[
  {id:"bed",name:"Out of bed + make bed",targetSec:120,days:"daily"},
  {id:"oral",name:"Oral hygiene (brush, mouthwash, water floss, tongue scrape)",targetSec:480,days:"daily"},
- {id:"shower1",name:"Shower 1 — shampoo + apply hair masque",targetSec:360,days:["Thu","Sun"],parallel:true,masqueSec:600,bgName:"Masque sit"},
- {id:"shower",name:"Morning shower: cleanse + 3:00 cold + rinse",targetSec:420,days:["Mon","Tue","Wed","Fri","Sat"],cold:true,coldSec:180},
+ {id:"shower1",name:"Shower 1 — shampoo + apply hair masque",targetSec:360,days:["Thu","Mon"],parallel:true,masqueSec:600,bgName:"Masque sit"},
+ {id:"shower",name:"Morning shower: cleanse + 3:00 cold + rinse",targetSec:420,days:["Tue","Wed","Fri","Sat","Sun"],cold:true,coldSec:180},
  {id:"faceshave",name:"Face shave — 2 passes (WTG then ATG)",targetSec:1080,days:["Mon","Wed","Fri"]},
  {id:"bodyshave",name:"Shave armpits + pubes",targetSec:900,days:["Tue"]},
  {id:"breakfast",name:"Breakfast: cook + eat (3 eggs, 2 toast)",targetSec:1200,days:"daily"},
- {id:"shower2",name:"Shower 2 — rinse masque + facial cleanse + 3:00 cold",targetSec:480,days:["Thu","Sun"],cold:true,coldSec:180},
+ {id:"shower2",name:"Shower 2 — rinse masque + facial cleanse + 3:00 cold",targetSec:480,days:["Thu","Mon"],cold:true,coldSec:180},
  {id:"skincare",name:"AM skincare: cleanser → Vit C → hyaluronic acid → sunscreen",targetSec:360,days:"daily"},
+ {id:"lotion",name:"Apply lotion",targetSec:180,days:"daily"},
  {id:"dressed",name:"Get dressed",targetSec:300,days:"daily"},
- {id:"read",name:"Read 2 chapters — The Road to Serfdom, then Capitalism and Freedom",targetSec:1800,days:"daily",soft:true}
+ {id:"eyebrowgel",name:"Apply eyebrow gel",targetSec:180,days:"daily"},
+ {id:"read",name:"Read 2 chapters — The Road to Serfdom, then Capitalism and Freedom",targetSec:1800,days:"daily",soft:true},
+ {id:"clipnails",name:"Clip nails",targetSec:600,days:["Sun"]},
+ {id:"vacuum",name:"Vacuum",targetSec:900,days:["Sun"]},
+ {id:"cleanears",name:"Clean out ears",targetSec:300,days:["Sun"]},
+ {id:"website",name:"Website business",targetSec:1800,days:"daily"},
+ {id:"content",name:"Content creation",targetSec:2700,days:"daily"}
 ];
 
 let DATA={version:1,sessions:[],bodyweight:[],nutrition:[],routineConfig:{steps:[]},routineLog:[]};
