@@ -300,19 +300,64 @@ function daysToStr(d){return d==="daily"?"daily":(Array.isArray(d)?d.join(", "):
 function transSec(){return (DATA.routineConfig&&DATA.routineConfig.transitionSec)||0;}
 function parseRest(str){if(!str||str==="—")return 0;let m=str.match(/(\d+)\s*s/);if(m)return +m[1];
  let r=str.match(/(\d+)(?:\s*[–-]\s*(\d+))?\s*min/);if(r)return (r[2]?+r[2]:+r[1])*60;return 0;}
-function beep(){try{const a=new(window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator(),g=a.createGain();
- o.connect(g);g.connect(a.destination);o.type="sine";o.frequency.value=880;
- g.gain.setValueAtTime(.0001,a.currentTime);g.gain.exponentialRampToValueAtTime(.35,a.currentTime+.02);
- g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+.7);o.start();o.stop(a.currentTime+.72);}catch(e){}
- if(navigator.vibrate)navigator.vibrate([250,80,250]);}
+// ── Alarm / wake-lock / notify (built for iOS limits) ───────────────────────
+// iOS has NO web vibration API and freezes timers when backgrounded. The reliable
+// path is: a generated sound played via an <audio> element (the MEDIA channel, which
+// sounds even when the ring/silent switch is on), unlocked on the first tap, plus a
+// Screen Wake Lock so the screen never sleeps mid-timer and the alarm actually fires.
+let alarmEl=null,audioUnlocked=false,audioCtx=null,wakeLock=null,askedNotif=false;
+function makeAlarmURI(){
+ const sr=8000,dur=2.0,n=Math.floor(sr*dur),buf=new ArrayBuffer(44+n*2),dv=new DataView(buf);
+ const ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
+ ws(0,"RIFF");dv.setUint32(4,36+n*2,true);ws(8,"WAVE");ws(12,"fmt ");dv.setUint32(16,16,true);
+ dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,sr,true);dv.setUint32(28,sr*2,true);
+ dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,"data");dv.setUint32(40,n*2,true);
+ for(let i=0;i<n;i++){const t=i/sr,k=Math.floor(t/0.32),lt=t-k*0.32;let s=0;
+  if(lt<0.2&&k<6){const f=k%2?988:784,env=Math.min(1,lt/0.008)*Math.min(1,(0.2-lt)/0.02);s=Math.sin(2*Math.PI*f*t)*0.75*env;}
+  dv.setInt16(44+i*2,Math.max(-1,Math.min(1,s))*32767,true);}
+ let bin="",by=new Uint8Array(buf);for(let i=0;i<by.length;i++)bin+=String.fromCharCode(by[i]);
+ return "data:audio/wav;base64,"+btoa(bin);
+}
+function initAlarm(){if(!alarmEl){alarmEl=new Audio();alarmEl.src=makeAlarmURI();alarmEl.preload="auto";}}
+function unlockAudio(){ // must run inside a user gesture; muted play satisfies iOS, later plays are audible
+ initAlarm();if(audioUnlocked)return;alarmEl.muted=true;
+ const p=alarmEl.play();const done=()=>{try{alarmEl.pause();alarmEl.currentTime=0;}catch(e){}alarmEl.muted=false;audioUnlocked=true;};
+ if(p&&p.then)p.then(done).catch(()=>{alarmEl.muted=false;});else done();
+ try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")audioCtx.resume();}catch(e){}
+}
+document.addEventListener("pointerdown",unlockAudio,true);
+document.addEventListener("touchend",unlockAudio,true);
+function notify(msg){try{if("Notification"in window&&Notification.permission==="granted"){
+ const n=new Notification("⏱ "+(msg||"Time!"),{body:"Timer complete — next up.",tag:"lift-timer",renotify:true});
+ setTimeout(()=>{try{n.close();}catch(e){}},6000);}}catch(e){}}
+function maybeAskNotif(){if(askedNotif)return;askedNotif=true;
+ try{if("Notification"in window&&Notification.permission==="default")Notification.requestPermission().catch(()=>{});}catch(e){}}
+async function acquireWake(){try{if("wakeLock"in navigator&&!wakeLock){wakeLock=await navigator.wakeLock.request("screen");
+ wakeLock.addEventListener("release",()=>{wakeLock=null;});}}catch(e){}}
+function releaseWake(){try{if(wakeLock){wakeLock.release();wakeLock=null;}}catch(e){}}
+function timersActive(){return restInt!=null||mornInt!=null;}
+function updateWake(){if(timersActive())acquireWake();else releaseWake();}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&timersActive())acquireWake();});
+function beep(msg){
+ // primary: media-channel alarm (audible on silent mode, screen on)
+ try{initAlarm();alarmEl.muted=false;alarmEl.currentTime=0;const p=alarmEl.play();if(p&&p.catch)p.catch(()=>{});}catch(e){}
+ // fallback: Web Audio tone (nudges the audio subsystem; obeys the mute switch)
+ try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")audioCtx.resume();
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);o.type="sine";o.frequency.value=880;
+  g.gain.setValueAtTime(.0001,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.4,audioCtx.currentTime+.02);
+  g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+.6);o.start();o.stop(audioCtx.currentTime+.62);}catch(e){}
+ if(navigator.vibrate)navigator.vibrate([300,120,300,120,300]); // Android only; no-op on iOS
+ notify(msg);
+}
 let restInt=null,restEnd=0;
 function startRest(sec,label){clearInterval(restInt);restEnd=Date.now()+sec*1000;
+ unlockAudio();maybeAskNotif();
  const bar=document.getElementById("restbar");bar.classList.remove("done");bar.classList.add("show");
- document.getElementById("rl").textContent=label+" · rest";tickRest();restInt=setInterval(tickRest,250);}
+ document.getElementById("rl").textContent=label+" · rest";tickRest();restInt=setInterval(tickRest,250);updateWake();}
 function tickRest(){let left=Math.round((restEnd-Date.now())/1000);
  if(left<=0){document.getElementById("rc").textContent="0:00";const b=document.getElementById("restbar");
-  b.classList.add("done");document.getElementById("rl").textContent="Rest done — next set";clearInterval(restInt);beep();
-  setTimeout(()=>b.classList.remove("show"),4000);return;}
+  b.classList.add("done");document.getElementById("rl").textContent="Rest done — next set";clearInterval(restInt);restInt=null;beep("Rest done");
+  updateWake();setTimeout(()=>b.classList.remove("show"),4000);return;}
  document.getElementById("rc").textContent=fmtSec(left);}
 let sessInt=null;
 function startWorkout(){localStorage.setItem("workout_start",Date.now());renderSessTimer();}
@@ -466,7 +511,7 @@ function renderTabs(){
 function render(){
  normalizeData();
  // leaving the Morning tab: stop its clock and hide the background-timer chip
- if(CUR!=="Morning"){if(mornInt){clearInterval(mornInt);mornInt=null;}const bb=document.getElementById("bgbar");if(bb)bb.classList.remove("show");}
+ if(CUR!=="Morning"){if(mornInt){clearInterval(mornInt);mornInt=null;}const bb=document.getElementById("bgbar");if(bb)bb.classList.remove("show");updateWake();}
  renderTabs();
  const v=$("#view");
  const pw=programWeek();
@@ -780,7 +825,7 @@ function finalizeMorning(){
  const totalSec=Math.round((Date.now()-RUN.startTs)/1000);
  DATA.routineLog=(DATA.routineLog||[]).filter(e=>e.date!==RUN.date);
  DATA.routineLog.push({date:RUN.date,totalSec,perStep});
- RUN=null;saveRun();if(mornInt){clearInterval(mornInt);mornInt=null;}
+ RUN=null;saveRun();if(mornInt){clearInterval(mornInt);mornInt=null;}updateWake();
  persist("Morning logged");
  render(); // ensure we leave the finish view even if the sync is offline (persist only re-renders on success)
 }
@@ -847,7 +892,8 @@ function bindMorning(){
  const em=$("#endMorning");if(em)em.onclick=endMorningEarly;
  const fl=$("#finishLog");if(fl)fl.onclick=finalizeMorning;
  renderBgChip();
- if(RUN&&RUN.cur<RUN.steps.length){morningTick();mornInt=setInterval(morningTick,250);}
+ if(RUN&&RUN.cur<RUN.steps.length){maybeAskNotif();morningTick();mornInt=setInterval(morningTick,250);}
+ updateWake();
 }
 
 $("#savebtn").onclick=saveSession;
