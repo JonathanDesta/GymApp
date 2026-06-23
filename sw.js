@@ -1,6 +1,6 @@
 // Routines service worker.
 // Bump CACHE_VERSION on every deploy so old caches are purged.
-const CACHE_VERSION = "routines-v8";
+const CACHE_VERSION = "routines-v9";
 
 // App shell precached on install. index.html is fetched network-first below,
 // so a stale copy here is only ever a last-resort offline fallback.

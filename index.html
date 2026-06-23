@@ -237,20 +237,22 @@ const ATHLETIC={sub:"Sunday · ~30 min · rotate A→B→C each week · log what
 
 // ─── Module 2: Morning Routine seed (user edits these in-app; never hard-coded) ──
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const ROUTINE_VERSION=4; // bump to re-seed the default steps onto existing installs
+const ROUTINE_VERSION=5; // bump to re-seed the default steps onto existing installs
 // Day-aware order. Haircare is a two-shower flow (Thu + Mon) around the masque sit.
 // MON is a shave day, so the facial cleanse is in Shower 1 (cleanse before shaving);
 // THU is not, so its cleanse stays in Shower 2. The everyday cleanse+cold shower runs
-// only on non-haircare days so you never shower 3×. `detail` shows amounts/technique.
-// Times are tuned to the lowest reasonable to still get each step done.
+// only on non-haircare days so you never shower 3×. Tue body-shave is BEFORE the shower
+// (rinse off after); on non-haircare days skincare comes right after the shower/shave.
+// `detail` shows amounts/technique. Times tuned to a reasonable — not rushed — length.
 const ROUTINE_SEED=[
- {id:"bed",name:"Out of bed + make bed",targetSec:90,days:"daily"},
- {id:"oral",name:"Oral hygiene (brush, mouthwash, water floss, tongue scrape)",targetSec:300,days:"daily"},
+ {id:"bed",name:"Out of bed + make bed",targetSec:120,days:"daily"},
+ {id:"oral",name:"Oral hygiene (brush, mouthwash, water floss, tongue scrape)",targetSec:330,days:"daily"},
  {id:"shower1mon",name:"Shower 1 — facial cleanse + shampoo + apply masque",targetSec:240,days:["Mon"],parallel:true,masqueSec:600,bgName:"Masque sit",detail:"Cleanse face first (you shave right after). Shampoo: nickel-sized, massaged into scalp. Masque: 3 palmfuls, combed through."},
  {id:"shower1thu",name:"Shower 1 — shampoo + apply masque",targetSec:180,days:["Thu"],parallel:true,masqueSec:600,bgName:"Masque sit",detail:"Shampoo: nickel-sized, massaged into scalp. Masque: 3 palmfuls, combed through."},
+ {id:"bodyshave",name:"Shave armpits + pubes",targetSec:600,days:["Tue"],detail:"Before the shower so you rinse off right after."},
  {id:"shower",name:"Morning shower: cleanse + 3:00 cold + rinse",targetSec:360,days:["Tue","Wed","Fri","Sat","Sun"],cold:true,coldSec:180},
  {id:"faceshave",name:"Face shave — 2 passes (WTG then ATG)",targetSec:720,days:["Mon","Wed","Fri"]},
- {id:"bodyshave",name:"Shave armpits + pubes",targetSec:600,days:["Tue"]},
+ {id:"skincare_nh",name:"AM skincare: cleanser → Vit C → hyaluronic acid → sunscreen",targetSec:240,days:["Tue","Wed","Fri","Sat","Sun"]},
  {id:"breakfast",name:"Breakfast: cook + eat (3 eggs, 2 toast)",targetSec:900,days:"daily"},
  {id:"shower2mon",name:"Shower 2 — rinse masque + 3:00 cold",targetSec:300,days:["Mon"],cold:true,coldSec:180,detail:"Rinse masque out fully, then 3:00 cold (face already cleansed in Shower 1)."},
  {id:"shower2thu",name:"Shower 2 — rinse masque + facial cleanse + 3:00 cold",targetSec:360,days:["Thu"],cold:true,coldSec:180,detail:"Rinse masque out fully, cleanse face, then 3:00 cold."},
@@ -258,8 +260,8 @@ const ROUTINE_SEED=[
  {id:"jojoba",name:"Jojoba oil — rake through",targetSec:60,days:["Mon","Thu"],detail:"3 drops, rubbed between palms, raked through."},
  {id:"stylinggel",name:"Styling gel — rake through",targetSec:90,days:["Mon","Thu"],detail:"1 palmful, raked through."},
  {id:"curlsponge",name:"Curl sponge — 5 min",targetSec:300,days:["Mon","Thu"],detail:"Work in small circles all over, ~5 min."},
- {id:"skincare",name:"AM skincare: cleanser → Vit C → hyaluronic acid → sunscreen",targetSec:240,days:"daily"},
- {id:"lotion",name:"Apply lotion",targetSec:90,days:"daily"},
+ {id:"skincare_h",name:"AM skincare: cleanser → Vit C → hyaluronic acid → sunscreen",targetSec:240,days:["Mon","Thu"]},
+ {id:"lotion",name:"Apply lotion",targetSec:120,days:"daily"},
  {id:"dressed",name:"Get dressed",targetSec:180,days:"daily"},
  {id:"eyebrowgel",name:"Apply eyebrow gel",targetSec:60,days:"daily"},
  {id:"read",name:"Read 2 chapters — The Road to Serfdom, then Capitalism and Freedom",targetSec:1800,days:"daily",soft:true},
