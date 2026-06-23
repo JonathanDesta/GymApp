@@ -91,6 +91,7 @@ th{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
 .mstep{display:flex;justify-content:space-between;gap:10px;padding:6px 2px;border-bottom:1px solid var(--line);font-size:14px}
 .mstep:last-child{border-bottom:none}
 .mstep-t{color:var(--mut);font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.mstep-d{font-size:11px;color:var(--mut);margin-top:2px;line-height:1.3;font-weight:400}
 .tagp{background:#eef3fa;color:var(--blue);font-size:10px;padding:1px 6px;border-radius:6px;font-weight:700}
 .tagc{background:#e6f0ff;color:#1d4ed8;font-size:10px;padding:1px 6px;border-radius:6px;font-weight:700}
 .mstart{display:flex}.mstart .btn{flex:1}
@@ -108,6 +109,7 @@ th{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
 .mstep-clock.over{color:var(--red)}
 .mstep-clock.soft{color:var(--blue)}
 .mstep-target{font-size:12px;color:var(--mut);margin-bottom:8px}
+.mstep-detail{font-size:12.5px;color:#5a6b80;background:var(--chip);border-radius:8px;padding:7px 10px;margin:2px 0 10px;line-height:1.4;text-align:left}
 .subtimer{margin:10px 0;padding:10px;border:1px dashed var(--line);border-radius:10px}
 .subtimer.cold{border-color:#1d4ed8;background:#f0f6ff}
 .sub-stages{font-size:13px;color:var(--mut);margin-bottom:6px}
@@ -235,27 +237,35 @@ const ATHLETIC={sub:"Sunday · ~30 min · rotate A→B→C each week · log what
 
 // ─── Module 2: Morning Routine seed (user edits these in-app; never hard-coded) ──
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const ROUTINE_VERSION=3; // bump to re-seed the default steps onto existing installs
-// Day-aware order. Haircare is a two-shower flow (Thu + Mon) around the masque sit;
-// the everyday cleanse+cold shower runs only on non-haircare days so you never shower 3×.
-// EVERY step is a HARD time cap (the whole point of the app) — only "read" uses a soft target.
+const ROUTINE_VERSION=4; // bump to re-seed the default steps onto existing installs
+// Day-aware order. Haircare is a two-shower flow (Thu + Mon) around the masque sit.
+// MON is a shave day, so the facial cleanse is in Shower 1 (cleanse before shaving);
+// THU is not, so its cleanse stays in Shower 2. The everyday cleanse+cold shower runs
+// only on non-haircare days so you never shower 3×. `detail` shows amounts/technique.
+// Times are tuned to the lowest reasonable to still get each step done.
 const ROUTINE_SEED=[
- {id:"bed",name:"Out of bed + make bed",targetSec:120,days:"daily"},
- {id:"oral",name:"Oral hygiene (brush, mouthwash, water floss, tongue scrape)",targetSec:480,days:"daily"},
- {id:"shower1",name:"Shower 1 — shampoo + apply hair masque",targetSec:360,days:["Thu","Mon"],parallel:true,masqueSec:600,bgName:"Masque sit"},
- {id:"shower",name:"Morning shower: cleanse + 3:00 cold + rinse",targetSec:420,days:["Tue","Wed","Fri","Sat","Sun"],cold:true,coldSec:180},
- {id:"faceshave",name:"Face shave — 2 passes (WTG then ATG)",targetSec:1080,days:["Mon","Wed","Fri"]},
- {id:"bodyshave",name:"Shave armpits + pubes",targetSec:900,days:["Tue"]},
- {id:"breakfast",name:"Breakfast: cook + eat (3 eggs, 2 toast)",targetSec:1200,days:"daily"},
- {id:"shower2",name:"Shower 2 — rinse masque + facial cleanse + 3:00 cold",targetSec:480,days:["Thu","Mon"],cold:true,coldSec:180},
- {id:"skincare",name:"AM skincare: cleanser → Vit C → hyaluronic acid → sunscreen",targetSec:360,days:"daily"},
- {id:"lotion",name:"Apply lotion",targetSec:180,days:"daily"},
- {id:"dressed",name:"Get dressed",targetSec:300,days:"daily"},
- {id:"eyebrowgel",name:"Apply eyebrow gel",targetSec:180,days:"daily"},
+ {id:"bed",name:"Out of bed + make bed",targetSec:90,days:"daily"},
+ {id:"oral",name:"Oral hygiene (brush, mouthwash, water floss, tongue scrape)",targetSec:300,days:"daily"},
+ {id:"shower1mon",name:"Shower 1 — facial cleanse + shampoo + apply masque",targetSec:240,days:["Mon"],parallel:true,masqueSec:600,bgName:"Masque sit",detail:"Cleanse face first (you shave right after). Shampoo: nickel-sized, massaged into scalp. Masque: 3 palmfuls, combed through."},
+ {id:"shower1thu",name:"Shower 1 — shampoo + apply masque",targetSec:180,days:["Thu"],parallel:true,masqueSec:600,bgName:"Masque sit",detail:"Shampoo: nickel-sized, massaged into scalp. Masque: 3 palmfuls, combed through."},
+ {id:"shower",name:"Morning shower: cleanse + 3:00 cold + rinse",targetSec:360,days:["Tue","Wed","Fri","Sat","Sun"],cold:true,coldSec:180},
+ {id:"faceshave",name:"Face shave — 2 passes (WTG then ATG)",targetSec:720,days:["Mon","Wed","Fri"]},
+ {id:"bodyshave",name:"Shave armpits + pubes",targetSec:600,days:["Tue"]},
+ {id:"breakfast",name:"Breakfast: cook + eat (3 eggs, 2 toast)",targetSec:900,days:"daily"},
+ {id:"shower2mon",name:"Shower 2 — rinse masque + 3:00 cold",targetSec:300,days:["Mon"],cold:true,coldSec:180,detail:"Rinse masque out fully, then 3:00 cold (face already cleansed in Shower 1)."},
+ {id:"shower2thu",name:"Shower 2 — rinse masque + facial cleanse + 3:00 cold",targetSec:360,days:["Thu"],cold:true,coldSec:180,detail:"Rinse masque out fully, cleanse face, then 3:00 cold."},
+ {id:"leavein",name:"Leave-in conditioner — comb through",targetSec:90,days:["Mon","Thu"],detail:"1 palmful, rubbed between palms, raked through, then combed."},
+ {id:"jojoba",name:"Jojoba oil — rake through",targetSec:60,days:["Mon","Thu"],detail:"3 drops, rubbed between palms, raked through."},
+ {id:"stylinggel",name:"Styling gel — rake through",targetSec:90,days:["Mon","Thu"],detail:"1 palmful, raked through."},
+ {id:"curlsponge",name:"Curl sponge — 5 min",targetSec:300,days:["Mon","Thu"],detail:"Work in small circles all over, ~5 min."},
+ {id:"skincare",name:"AM skincare: cleanser → Vit C → hyaluronic acid → sunscreen",targetSec:240,days:"daily"},
+ {id:"lotion",name:"Apply lotion",targetSec:90,days:"daily"},
+ {id:"dressed",name:"Get dressed",targetSec:180,days:"daily"},
+ {id:"eyebrowgel",name:"Apply eyebrow gel",targetSec:60,days:"daily"},
  {id:"read",name:"Read 2 chapters — The Road to Serfdom, then Capitalism and Freedom",targetSec:1800,days:"daily",soft:true},
- {id:"clipnails",name:"Clip nails",targetSec:600,days:["Sun"]},
- {id:"vacuum",name:"Vacuum",targetSec:900,days:["Sun"]},
- {id:"cleanears",name:"Clean out ears",targetSec:300,days:["Sun"]},
+ {id:"clipnails",name:"Clip nails",targetSec:300,days:["Sun"]},
+ {id:"vacuum",name:"Vacuum",targetSec:600,days:["Sun"]},
+ {id:"cleanears",name:"Clean out ears",targetSec:180,days:["Sun"]},
  {id:"website",name:"Website business",targetSec:1800,days:"daily"},
  {id:"content",name:"Content creation",targetSec:2700,days:"daily"}
 ];
@@ -714,7 +724,7 @@ function morningStartView(){
  h+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
    <b style="color:var(--navy)">Today's steps</b><button class="restbtn" id="editToggle">Edit steps</button></div>`;
  if(!today.length){h+=`<div class="muted">No steps scheduled for ${todayDOW()}. Tap “Edit steps” to add some.</div>`;}
- today.forEach((s,i)=>{h+=`<div class="mstep"><div>${i+1}. ${escapeHtml(s.name)}${s.parallel?' <span class="tagp">parallel</span>':''}${s.cold?' <span class="tagc">cold</span>':''}</div><div class="mstep-t">${fmtSec(s.targetSec)}</div></div>`;});
+ today.forEach((s,i)=>{h+=`<div class="mstep"><div><div>${i+1}. ${escapeHtml(s.name)}${s.parallel?' <span class="tagp">parallel</span>':''}${s.cold?' <span class="tagc">cold</span>':''}</div>${s.detail?`<div class="mstep-d">${escapeHtml(s.detail)}</div>`:""}</div><div class="mstep-t">${fmtSec(s.targetSec)}</div></div>`;});
  h+=`</div>`;
  if(today.length)h+=`<div class="card mstart"><button class="btn primary" id="startMorning">Start morning ▸</button></div>`;
  return h;
@@ -756,7 +766,8 @@ function morningRunningView(){
    <div class="exnote">step ${RUN.cur+1} of ${RUN.steps.length}${s.soft?" · wind-down (soft target)":""}</div>
    <div class="mstep-name">${escapeHtml(s.name)}</div>
    <div class="mstep-clock ${s.soft?"soft":""}" id="stepClock">${fmtSigned(s.targetSec)}</div>
-   <div class="mstep-target">target ${fmtSec(s.targetSec)}</div>`;
+   <div class="mstep-target">target ${fmtSec(s.targetSec)}</div>
+   ${s.detail?`<div class="mstep-detail">${escapeHtml(s.detail)}</div>`:""}`;
  if(s.cold){
   if(!RUN.cold)h+=`<div class="subtimer"><div class="sub-stages">cleanse → <b>3:00 cold</b> → rinse</div>
     <button class="btn primary sm" id="coldStart">Start 3:00 cold ❄</button></div>`;
@@ -787,7 +798,7 @@ function morningFinishView(){
 }
 function startMorning(){
  const steps=todaySteps().map(s=>({id:s.id,name:s.name,targetSec:s.targetSec,parallel:!!s.parallel,
-  cold:!!s.cold,coldSec:s.coldSec||180,masqueSec:s.masqueSec||600,soft:!!s.soft,
+  cold:!!s.cold,coldSec:s.coldSec||180,masqueSec:s.masqueSec||600,soft:!!s.soft,detail:s.detail||"",
   status:"pending",startTs:null,actualSec:null,beeped:false}));
  if(!steps.length){toast("No steps for today");return;}
  RUN={date:todayISO(),startTs:Date.now(),cur:0,steps,bg:[],cold:null};
