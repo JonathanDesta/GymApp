@@ -272,13 +272,34 @@ const ROUTINE_SEED=[
  {id:"content",name:"Content creation",targetSec:2700,days:"daily"}
 ];
 
-let DATA={version:1,sessions:[],bodyweight:[],nutrition:[],routineConfig:{steps:[]},routineLog:[]};
+// ─── Nighttime routine seed (same timed-runner as Morning; same every day) ──
+const NIGHT_VERSION=1; // bump to re-seed the default night steps onto existing installs
+const NIGHT_SEED=[
+ {id:"bacopa",name:"Take bacopa monnieri",targetSec:60,days:"daily"},
+ {id:"makeshake",name:"Make protein shake (glycine + creatine)",targetSec:180,days:"daily",detail:"1 scoop protein + glycine + creatine, shake/blend. Made now so it's ready after the shower."},
+ {id:"nightshower",name:"Full scrubbing shower + facial cleanse",targetSec:600,days:"daily",detail:"Scrub down the whole body, then cleanse the face."},
+ {id:"pmskincare",name:"PM skincare: Differin + hyaluronic acid + moisturizer",targetSec:300,days:"daily",detail:"Differin gel: pea-sized on dry skin. Then hyaluronic acid, then PM facial moisturizer."},
+ {id:"drinkshake",name:"Drink protein shake",targetSec:180,days:"daily"},
+ {id:"magnesium",name:"Take magnesium",targetSec:60,days:"daily"},
+ {id:"nightoral",name:"Oral hygiene (brush, mouthwash, water floss, tongue scrape)",targetSec:300,days:"daily"},
+ {id:"retainer",name:"Put in retainer",targetSec:60,days:"daily"}
+];
+
+let DATA={version:1,sessions:[],bodyweight:[],nutrition:[],routineConfig:{steps:[]},routineLog:[],nightConfig:{steps:[]},nightLog:[]};
 let CUR="Morning";
 let DIRTY={}; // exName -> {wt,reps}
-let RUN=null;          // in-progress morning (also mirrored to localStorage so reloads resume)
-let mornInt=null;      // morning tick interval
+let RUN=null;          // in-progress routine run (mirrored to localStorage so reloads resume)
+let runTab=null;       // which routine tab RUN belongs to (Morning | Nighttime)
+let mornInt=null;      // routine tick interval
 let editMode=false;    // routine-step editor open?
-const RUNKEY="morning_run_v1";
+// Active-routine accessors — the runner serves both the Morning and Nighttime tabs.
+function isRoutineTab(t){return t==="Morning"||t==="Nighttime";}
+function RCFG(){return CUR==="Nighttime"?DATA.nightConfig:DATA.routineConfig;}
+function RLOG(){return CUR==="Nighttime"?DATA.nightLog:DATA.routineLog;}
+function setRLOG(v){if(CUR==="Nighttime")DATA.nightLog=v;else DATA.routineLog=v;}
+function RKEY(){return CUR==="Nighttime"?"night_run_v1":"morning_run_v1";}
+function RLABEL(){return CUR==="Nighttime"?"night":"morning";}
+function RVERB(){return CUR==="Nighttime"?"Nighttime":"Morning";}
 // Seed/repair any missing top-level keys so old Drive files gain the routine fields.
 function normalizeData(){
  if(!DATA||typeof DATA!=="object")DATA={version:1};
@@ -292,6 +313,13 @@ function normalizeData(){
  }
  if(typeof DATA.routineConfig.transitionSec!=="number")DATA.routineConfig.transitionSec=45;
  if(!Array.isArray(DATA.routineLog))DATA.routineLog=[];
+ const nc=DATA.nightConfig;
+ if(!nc||!Array.isArray(nc.steps)||!nc.steps.length||nc.v!==NIGHT_VERSION){
+  DATA.nightConfig={v:NIGHT_VERSION,steps:NIGHT_SEED.map(s=>Object.assign({},s)),
+   transitionSec:(nc&&typeof nc.transitionSec==="number")?nc.transitionSec:45};
+ }
+ if(typeof DATA.nightConfig.transitionSec!=="number")DATA.nightConfig.transitionSec=45;
+ if(!Array.isArray(DATA.nightLog))DATA.nightLog=[];
 }
 
 const $=s=>document.querySelector(s);
@@ -304,12 +332,12 @@ function escapeHtml(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&
 function escapeAttr(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function todayDOW(){return DOW[new Date().getDay()];}
 function stepRunsOn(s,dow){return s.days==="daily"||(Array.isArray(s.days)&&s.days.indexOf(dow)>=0);}
-function todaySteps(){return (DATA.routineConfig.steps||[]).filter(s=>stepRunsOn(s,todayDOW()));}
+function todaySteps(){return (RCFG().steps||[]).filter(s=>stepRunsOn(s,todayDOW()));}
 function parseDays(str){str=(str||"").trim();if(!str||/^daily$/i.test(str))return "daily";
  const set=str.split(/[,\s]+/).map(d=>d.slice(0,1).toUpperCase()+d.slice(1,3).toLowerCase()).filter(d=>DOW.indexOf(d)>=0);
  return set.length?set:"daily";}
 function daysToStr(d){return d==="daily"?"daily":(Array.isArray(d)?d.join(", "):"daily");}
-function transSec(){return (DATA.routineConfig&&DATA.routineConfig.transitionSec)||0;}
+function transSec(){return (RCFG()&&RCFG().transitionSec)||0;}
 function parseRest(str){if(!str||str==="—")return 0;let m=str.match(/(\d+)\s*s/);if(m)return +m[1];
  let r=str.match(/(\d+)(?:\s*[–-]\s*(\d+))?\s*min/);if(r)return (r[2]?+r[2]:+r[1])*60;return 0;}
 // ── Alarm / wake-lock / notify (built for iOS limits) ───────────────────────
@@ -513,7 +541,7 @@ function lastEntry(day,name){
 
 function renderTabs(){
  const t=$("#tabs");t.innerHTML="";
- ["Morning",...Object.keys(PROG),"Athletic","Bodyweight"].forEach(name=>{
+ ["Morning","Nighttime",...Object.keys(PROG),"Athletic","Bodyweight"].forEach(name=>{
   const b=document.createElement("button");
   b.className="tab"+(name===CUR?" active":"");
   b.textContent=name;b.onclick=()=>{CUR=name;DIRTY={};render();};
@@ -522,17 +550,18 @@ function renderTabs(){
 }
 function render(){
  normalizeData();
- // leaving the Morning tab: stop its clock and hide the background-timer chip
- if(CUR!=="Morning"){if(mornInt){clearInterval(mornInt);mornInt=null;}const bb=document.getElementById("bgbar");if(bb)bb.classList.remove("show");updateWake();}
+ // leaving a routine tab: stop its clock and hide the background-timer chip
+ if(!isRoutineTab(CUR)){if(mornInt){clearInterval(mornInt);mornInt=null;}const bb=document.getElementById("bgbar");if(bb)bb.classList.remove("show");updateWake();}
  renderTabs();
  const v=$("#view");
  const pw=programWeek();
  $("#statline").innerHTML=CUR==="Morning"?`Morning routine · ${todayDOW()}`
+   :CUR==="Nighttime"?`Nighttime routine`
    :(pw?`Week <b>${pw.wk}</b> · deload in ${pw.deload} wk${pw.deload!==1?"s":""}`
    :`<a href="#" id="setstart" style="color:var(--blue)">Set program start date →</a>`);
- if(CUR!=="Morning"&&!pw){setTimeout(()=>{const a=$("#setstart");if(a)a.onclick=ev=>{ev.preventDefault();
+ if(!isRoutineTab(CUR)&&!pw){setTimeout(()=>{const a=$("#setstart");if(a)a.onclick=ev=>{ev.preventDefault();
    const d=prompt("Program start date (YYYY-MM-DD):",todayISO());if(d){localStorage.setItem(PStart,d);render();}};},0);}
- if(CUR==="Morning"){v.innerHTML=morningView();$("#savebar").style.display="none";bindMorning();return;}
+ if(isRoutineTab(CUR)){v.innerHTML=morningView();$("#savebar").style.display="none";bindMorning();return;}
  if(CUR==="Bodyweight"){v.innerHTML=bodyView();$("#savebar").style.display="none";setTimeout(drawChart,30);bindBW();return;}
  if(CUR==="Athletic"){v.innerHTML=athleticView();$("#savebar").style.display="none";bindAth();return;}
  // training day
@@ -700,35 +729,38 @@ function bindAth(){
 }
 
 // ─── Module 2: Morning Routine runner ────────────────────────────────────
-function saveRun(){if(RUN)localStorage.setItem(RUNKEY,JSON.stringify(RUN));else localStorage.removeItem(RUNKEY);}
-function loadRun(){try{const r=JSON.parse(localStorage.getItem(RUNKEY));if(r&&r.date===todayISO())return r;}catch(e){}return null;}
-function last7Avg(){const log=(DATA.routineLog||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(-7);
+function saveRun(){if(RUN)localStorage.setItem(RKEY(),JSON.stringify(RUN));else localStorage.removeItem(RKEY());}
+function loadRun(){try{const r=JSON.parse(localStorage.getItem(RKEY()));if(r&&r.date===todayISO())return r;}catch(e){}return null;}
+function last7Avg(){const log=(RLOG()||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(-7);
  if(!log.length)return null;return Math.round(log.reduce((s,x)=>s+x.totalSec,0)/log.length);}
 
 function morningView(){
+ if(runTab!==CUR){RUN=null;runTab=CUR;}   // switching routine tabs: load that tab's own run
  if(!RUN)RUN=loadRun();
  if(RUN&&RUN.cur<RUN.steps.length)return morningRunningView();
  if(RUN&&RUN.cur>=RUN.steps.length)return morningFinishView();
  return morningStartView();
 }
 function morningStartView(){
- const steps=DATA.routineConfig.steps;
+ const steps=RCFG().steps;
  const today=todaySteps();
  const tr=transSec();
  const budget=today.reduce((s,x)=>s+x.targetSec,0)+tr*today.length;
  const avg=last7Avg();
- let h=`<div class="daysub">Today is ${todayDOW()} · ${today.length} step${today.length!==1?"s":""} · budget ~${Math.round(budget/60)} min${tr?` <span class="muted">(incl. ${tr}s/step transition)</span>`:""}</div>`;
+ const when=CUR==="Nighttime"?"Tonight":"Today is "+todayDOW();
+ let h=`<div class="daysub">${when} · ${today.length} step${today.length!==1?"s":""} · budget ~${Math.round(budget/60)} min${tr?` <span class="muted">(incl. ${tr}s/step transition)</span>`:""}</div>`;
+ const budgetLbl=(CUR==="Nighttime"?"Tonight's":"Today's")+" budget";
  h+=`<div class="kpis">
-   <div class="kpi"><div class="v">~${Math.round(budget/60)}m</div><div class="l">Today's budget</div></div>
+   <div class="kpi"><div class="v">~${Math.round(budget/60)}m</div><div class="l">${budgetLbl}</div></div>
    <div class="kpi"><div class="v">${avg?fmtSec(avg):"–"}</div><div class="l">Last-7 avg</div></div>
-   <div class="kpi"><div class="v">${(DATA.routineLog||[]).length}</div><div class="l">Logged</div></div></div>`;
+   <div class="kpi"><div class="v">${(RLOG()||[]).length}</div><div class="l">Logged</div></div></div>`;
  if(editMode)return h+editorView(steps);
  h+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-   <b style="color:var(--navy)">Today's steps</b><button class="restbtn" id="editToggle">Edit steps</button></div>`;
- if(!today.length){h+=`<div class="muted">No steps scheduled for ${todayDOW()}. Tap “Edit steps” to add some.</div>`;}
+   <b style="color:var(--navy)">${CUR==="Nighttime"?"Tonight's":"Today's"} steps</b><button class="restbtn" id="editToggle">Edit steps</button></div>`;
+ if(!today.length){h+=`<div class="muted">No steps yet. Tap “Edit steps” to add some.</div>`;}
  today.forEach((s,i)=>{h+=`<div class="mstep"><div><div>${i+1}. ${escapeHtml(s.name)}${s.parallel?' <span class="tagp">parallel</span>':''}${s.cold?' <span class="tagc">cold</span>':''}</div>${s.detail?`<div class="mstep-d">${escapeHtml(s.detail)}</div>`:""}</div><div class="mstep-t">${fmtSec(s.targetSec)}</div></div>`;});
  h+=`</div>`;
- if(today.length)h+=`<div class="card mstart"><button class="btn primary" id="startMorning">Start morning ▸</button></div>`;
+ if(today.length)h+=`<div class="card mstart"><button class="btn primary" id="startMorning">Start ${RLABEL()} ▸</button></div>`;
  return h;
 }
 function editorView(steps){
@@ -763,7 +795,7 @@ function morningRunningView(){
    <div class="mclock-top">
      <div><div class="mclock" id="mClock">0:00</div><div class="mclock-sub">of ~${Math.round(totalTarget/60)}m budget</div></div>
      <div class="mpace" id="mPace">on pace</div></div>
-   <button class="restbtn" id="endMorning" style="margin-top:10px">End &amp; log morning</button></div>`;
+   <button class="restbtn" id="endMorning" style="margin-top:10px">End &amp; log ${RLABEL()}</button></div>`;
  h+=`<div class="card mstep-active">
    <div class="exnote">step ${RUN.cur+1} of ${RUN.steps.length}${s.soft?" · wind-down (soft target)":""}</div>
    <div class="mstep-name">${escapeHtml(s.name)}</div>
@@ -790,7 +822,7 @@ function morningFinishView(){
  const totalSec=Math.round((Date.now()-RUN.startTs)/1000);
  const totalTarget=RUN.steps.reduce((a,x)=>a+x.targetSec,0);
  let h=`<div class="card mstep-active">
-   <div class="mstep-name">Morning complete 🎉</div>
+   <div class="mstep-name">${RVERB()} complete 🎉</div>
    <div class="mclock" style="color:var(--navy);margin:6px 0">${fmtSec(totalSec)}</div>
    <div class="muted">vs ~${Math.round(totalTarget/60)}m budget</div>
    <div class="mprog" style="margin-top:12px;text-align:left">`;
@@ -829,17 +861,17 @@ function advance(){
 function endMorningEarly(){
  if(!RUN)return;
  const pending=RUN.steps.filter(s=>s.status==="pending"||s.status==="active").length;
- if(pending&&!confirm("End the morning now and log what you've completed? "+pending+" step"+(pending!==1?"s":"")+" still pending."))return;
+ if(pending&&!confirm("End the "+RLABEL()+" now and log what you've completed? "+pending+" step"+(pending!==1?"s":"")+" still pending."))return;
  finalizeMorning();
 }
 function finalizeMorning(){
  if(!RUN)return;
  const perStep={};RUN.steps.forEach(s=>{if(s.actualSec!=null)perStep[s.id]=s.actualSec;});
  const totalSec=Math.round((Date.now()-RUN.startTs)/1000);
- DATA.routineLog=(DATA.routineLog||[]).filter(e=>e.date!==RUN.date);
- DATA.routineLog.push({date:RUN.date,totalSec,perStep});
+ setRLOG((RLOG()||[]).filter(e=>e.date!==RUN.date));
+ RLOG().push({date:RUN.date,totalSec,perStep});
  RUN=null;saveRun();if(mornInt){clearInterval(mornInt);mornInt=null;}updateWake();
- persist("Morning logged");
+ persist(RVERB()+" logged");
  render(); // ensure we leave the finish view even if the sync is offline (persist only re-renders on success)
 }
 function morningTick(){
@@ -883,7 +915,7 @@ function renderBgChip(){
 }
 function bindMorning(){
  if(mornInt){clearInterval(mornInt);mornInt=null;}
- const steps=DATA.routineConfig.steps;
+ const steps=RCFG().steps;
  const sm=$("#startMorning");if(sm)sm.onclick=startMorning;
  const et=$("#editToggle");if(et)et.onclick=()=>{editMode=!editMode;render();};
  // editor field bindings (update model live; reorder/add/delete re-render)
@@ -894,7 +926,7 @@ function bindMorning(){
  document.querySelectorAll(".ed-up").forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(i>0){const t=steps[i-1];steps[i-1]=steps[i];steps[i]=t;render();}});
  document.querySelectorAll(".ed-dn").forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(i<steps.length-1){const t=steps[i+1];steps[i+1]=steps[i];steps[i]=t;render();}});
  document.querySelectorAll(".ed-del").forEach(b=>b.onclick=()=>{steps.splice(+b.dataset.i,1);render();});
- const tr=$("#edTrans");if(tr)tr.onchange=()=>{const v=parseInt(tr.value,10);if(!isNaN(v))DATA.routineConfig.transitionSec=Math.max(0,v);};
+ const tr=$("#edTrans");if(tr)tr.onchange=()=>{const v=parseInt(tr.value,10);if(!isNaN(v))RCFG().transitionSec=Math.max(0,v);};
  const ea=$("#edAdd");if(ea)ea.onclick=()=>{steps.push({id:"s"+Date.now(),name:"New step",targetSec:300,days:"daily"});render();};
  const es=$("#edSave");if(es)es.onclick=()=>persist("Steps saved");
  // runner bindings
