@@ -237,7 +237,7 @@ const ATHLETIC={sub:"Sunday · ~30 min · rotate A→B→C each week · log what
 
 // ─── Module 2: Morning Routine seed (user edits these in-app; never hard-coded) ──
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const ROUTINE_VERSION=5; // bump to re-seed the default steps onto existing installs
+const ROUTINE_VERSION=6; // bump to re-seed the default steps onto existing installs
 // Day-aware order. Haircare is a two-shower flow (Thu + Mon) around the masque sit.
 // MON is a shave day, so the facial cleanse is in Shower 1 (cleanse before shaving);
 // THU is not, so its cleanse stays in Shower 2. The everyday cleanse+cold shower runs
@@ -264,7 +264,7 @@ const ROUTINE_SEED=[
  {id:"lotion",name:"Apply lotion",targetSec:120,days:"daily"},
  {id:"dressed",name:"Get dressed",targetSec:180,days:"daily"},
  {id:"eyebrowgel",name:"Apply eyebrow gel",targetSec:60,days:"daily"},
- {id:"read",name:"Read 2 chapters — The Road to Serfdom, then Capitalism and Freedom",targetSec:1800,days:"daily",soft:true},
+ {id:"read",name:"Read + take notes — 2 chapters (The Road to Serfdom, then Capitalism and Freedom)",targetSec:5400,days:"daily",soft:true},
  {id:"clipnails",name:"Clip nails",targetSec:300,days:["Sun"]},
  {id:"vacuum",name:"Vacuum",targetSec:600,days:["Sun"]},
  {id:"cleanears",name:"Clean out ears",targetSec:180,days:["Sun"]},
