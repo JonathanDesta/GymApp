@@ -274,11 +274,12 @@ const ROUTINE_SEED=[
 ];
 
 // ─── Nighttime routine seed (same timed-runner as Morning; same every day) ──
-const NIGHT_VERSION=1; // bump to re-seed the default night steps onto existing installs
+const NIGHT_VERSION=2; // bump to re-seed the default night steps onto existing installs
 const NIGHT_SEED=[
  {id:"bacopa",name:"Take bacopa monnieri",targetSec:60,days:"daily"},
  {id:"makeshake",name:"Make protein shake (glycine + creatine)",targetSec:180,days:"daily",detail:"1 scoop protein + glycine + creatine, shake/blend. Made now so it's ready after the shower."},
  {id:"nightshower",name:"Full scrubbing shower + facial cleanse",targetSec:600,days:"daily",detail:"Scrub down the whole body, then cleanse the face."},
+ {id:"nightlotion",name:"Apply lotion",targetSec:120,days:"daily"},
  {id:"pmskincare",name:"PM skincare: Differin + hyaluronic acid + moisturizer",targetSec:300,days:"daily",detail:"Differin gel: pea-sized on dry skin. Then hyaluronic acid, then PM facial moisturizer."},
  {id:"drinkshake",name:"Drink protein shake",targetSec:180,days:"daily"},
  {id:"magnesium",name:"Take magnesium",targetSec:60,days:"daily"},
