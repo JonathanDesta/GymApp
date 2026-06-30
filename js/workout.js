@@ -27,11 +27,47 @@ const WORKOUT_TOTALMIN = {
 };
 function workoutBlockName(id) { const b = WORKOUT_BLOCKS.find(b => b.id === id); return b ? b.name : "—"; }
 
-// Live block/week/cutting from the embedded workout app's shared storage, with
-// our own DATA.workout as the fallback (e.g. running on a different origin).
-function olyState() { try { return JSON.parse(localStorage.getItem("oly_state")) || null; } catch (e) { return null; } }
+// ─── Shared sync bridge for the embedded workout app ──────────────────────────
+// The workout app saves to localStorage["oly_state"] (no cloud sync of its own).
+// Because it shares this app's origin & storage, we ride Day's Drive sync:
+//   • capture: when the embedded app writes oly_state, fold it into DATA.olyState
+//     and push through Day's Drive file (debounced).
+//   • seed: on another device, when Day pulls a newer copy, write it back into
+//     localStorage BEFORE the iframe loads so the embedded app shows synced data.
+function readLocalOly() { try { return JSON.parse(localStorage.getItem("oly_state")) || null; } catch (e) { return null; } }
+let _lastOlyJSON = null, _olyPushTimer = null;
+function captureOlyState() {
+  const local = readLocalOly();
+  if (!local) return;
+  const j = JSON.stringify(local);
+  const cur = (DATA.olyState && DATA.olyState.data) ? JSON.stringify(DATA.olyState.data) : null;
+  if (j === cur || j === _lastOlyJSON) return; // nothing new / already handled
+  _lastOlyJSON = j;
+  DATA.olyState = { data: local, ts: Date.now() };
+  saveLocal();
+  // debounce the Drive push (the workout app may save several times in a row)
+  clearTimeout(_olyPushTimer);
+  setSync("syncing…");
+  _olyPushTimer = setTimeout(() => {
+    DATA.updated = new Date().toISOString(); saveLocal();
+    saveDrive().then(() => setSync("synced ✓", "ok")).catch(() => setSync("saved on device", "warn"));
+  }, 3500);
+}
+// Returns true if it changed localStorage (caller should reload the iframe).
+function seedOlyDown() {
+  if (!DATA.olyState || !DATA.olyState.data) return false;
+  const remoteJ = JSON.stringify(DATA.olyState.data);
+  const local = readLocalOly();
+  if (local && JSON.stringify(local) === remoteJ) return false; // already in sync
+  try { localStorage.setItem("oly_state", remoteJ); } catch (e) {}
+  _lastOlyJSON = remoteJ; // don't re-capture what we just seeded
+  return true;
+}
+
+// Live block/week/cutting — prefer the embedded app's shared storage, then the
+// synced snapshot, then our own DATA.workout fallback (different-origin dev).
 function workoutBlockState() {
-  const oly = olyState();
+  const oly = readLocalOly() || (DATA.olyState && DATA.olyState.data) || null;
   if (oly && oly.program) return { blockId: oly.program.blockId | 0, weekInBlock: oly.program.weekInBlock || 0, cutting: !!oly.cutting, src: "live" };
   const w = DATA.workout || {};
   return { blockId: w.blockId | 0, weekInBlock: w.weekInBlock || 0, cutting: !!w.cutting, src: "local" };
@@ -58,6 +94,7 @@ function workoutSkippedFor(dateISO) { const p = DATA.dayPlans[dateISO]; return !
 
 // ─── Workout view: summary strip + collapsible timing + embedded app ──────────
 function workoutView() {
+  seedOlyDown(); // ensure shared storage holds the synced copy before the iframe loads
   const w = DATA.workout;
   const st = workoutBlockState();
   const todayMin = workoutDurationMin(todayISO());
@@ -76,7 +113,7 @@ function workoutView() {
     <div class="frow"><label>Skip the gym today</label><input type="checkbox" id="wkSkip" ${skipped ? "checked" : ""}></div>
     <div class="frow"><label>Training days</label>
       <div class="daypick" id="wkDays">${DOW.map(d => `<button class="daybtn ${(w.days || []).indexOf(d) >= 0 ? "on" : ""}" data-d="${d}">${d}</button>`).join("")}</div></div>
-    <div class="hint">Block, week, phase and all logging live in the embedded app below — change them there and the timeline follows. ${st.src === "local" ? "<b>Heads-up:</b> the workout app's data isn't visible here yet (it loads once you open it on this device); using saved defaults meanwhile." : "Synced with the workout app ✓"}</div>
+    <div class="hint">Block, week, phase and all logging live in the embedded app below — change them there and the timeline follows. Its data is backed up and synced through Day's Google Drive ${DATA.olyState ? "✓ last saved " + new Date(DATA.olyState.ts).toLocaleString() : "(connect Google to enable)"}.</div>
   </details>`;
 
   h += `<iframe class="workframe" id="workframe" src="${escapeAttr(workoutAppUrl())}"
@@ -94,3 +131,11 @@ function bindWorkout() {
     persist("Days updated"); render();
   });
 }
+
+// Capture the embedded app's saves and fold them into Day's synced state.
+// A same-origin iframe writing localStorage fires 'storage' in this parent frame.
+window.addEventListener("storage", (e) => { if (e.key === "oly_state") captureOlyState(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") captureOlyState(); });
+// Safety net: while the embedded app is in use, the cross-frame storage event can
+// be unreliable on iOS — poll cheaply (captureOlyState no-ops when unchanged).
+setInterval(() => { if (CUR === "Workout" && document.visibilityState === "visible") captureOlyState(); }, 5000);

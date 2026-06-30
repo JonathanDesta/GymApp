@@ -29,7 +29,7 @@ function renderTabs() {
     const b = document.createElement("button");
     b.className = "tab" + (name === CUR ? " active" : "");
     b.textContent = name;
-    b.onclick = () => { CUR = name; editMode = false; render(); };
+    b.onclick = () => { if (typeof captureOlyState === "function") captureOlyState(); CUR = name; editMode = false; render(); };
     t.appendChild(b);
   });
 }
@@ -230,6 +230,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 (function init() {
   loadLocal();
   normalizeData();
+  if (typeof seedOlyDown === "function") seedOlyDown(); // hydrate workout state for the timeline
   render();
   setSync("connect Google", "warn");
   // Pre-init the GIS token client so the first tap is instant.

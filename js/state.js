@@ -49,6 +49,7 @@ function defaultData() {
       defaultTravelMin: 15,         // fallback buffer when no route can be computed
       workoutAppUrl: "https://jonathandesta.github.io/oly-tracker/", // embedded in the Workout tab
     },
+    olyState: null, // synced snapshot of the embedded workout app: { data:<oly_state>, ts }
     places: {},     // normalizedAddress -> { lat, lon, label, ts }
     routeCache: {}, // "olat,olon|dlat,dlon|mode" -> { sec, ts }
     dayPlans: {},   // 'YYYY-MM-DD' -> { wakeTime?, bedTime?, workoutDepart?, workoutSkip?, tasks:[], removedEventIds:[] }
@@ -167,8 +168,11 @@ async function onConnected() {
 function reconcile(remote) {
   const localU = DATA.updated ? Date.parse(DATA.updated) : 0;
   const remoteU = remote.updated ? Date.parse(remote.updated) : 0;
-  if (remoteU >= localU) { DATA = remote; normalizeData(); saveLocal(); }
-  else saveDrive().catch(() => {});
+  if (remoteU >= localU) {
+    DATA = remote; normalizeData(); saveLocal();
+    // a newer remote may carry newer workout-app data → push it into shared storage
+    if (typeof seedOlyDown === "function") seedOlyDown();
+  } else saveDrive().catch(() => {});
 }
 
 // ─── Drive file CRUD ──────────────────────────────────────────────────────────
