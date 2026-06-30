@@ -180,6 +180,11 @@ function settingsView() {
     <div class="hint">Free mode uses OpenStreetMap + OSRM — no key, no cost. A Maps key adds live traffic & transit but may bill beyond Google's free tier.</div>
   </div>`;
 
+  h += `<div class="card"><div class="cardhd"><b>Workout app</b></div>
+    <div class="frow"><label>Embedded workout app URL</label><input id="sWkUrl" class="sel" style="width:100%" value="${escapeAttr(S.workoutAppUrl || "https://jonathandesta.github.io/oly-tracker/")}"></div>
+    <div class="hint">The Workout tab embeds this app. Hosted on the same domain, it shares storage so the timeline reads your live block/week/cutting automatically.</div>
+  </div>`;
+
   h += `<div class="card"><div class="cardhd"><b>Daily defaults</b></div>
     <div class="frow"><label>Default wake time</label><input type="time" id="sWake" class="sel" value="${S.wakeTime || "07:00"}"></div>
     <div class="frow"><label>Default bedtime</label><input type="time" id="sBed" class="sel" value="${S.bedTime || "23:00"}"></div>
@@ -205,6 +210,7 @@ function bindSettings() {
   bind("#sMode", v => S.travelMode = v);
   bind("#sBuf", v => S.defaultTravelMin = parseInt(v, 10) || 15);
   bind("#sMapKey", v => S.mapsApiKey = v.trim());
+  bind("#sWkUrl", v => S.workoutAppUrl = v.trim());
   bind("#sWake", v => S.wakeTime = v);
   bind("#sBed", v => S.bedTime = v);
   const ex = $("#sExport"); if (ex) ex.onclick = () => {

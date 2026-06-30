@@ -47,6 +47,7 @@ function defaultData() {
       travelMode: "driving",        // driving | walking | transit (transit needs Google key)
       mapsApiKey: "",               // optional Google key for live/traffic travel time
       defaultTravelMin: 15,         // fallback buffer when no route can be computed
+      workoutAppUrl: "https://jonathandesta.github.io/oly-tracker/", // embedded in the Workout tab
     },
     places: {},     // normalizedAddress -> { lat, lon, label, ts }
     routeCache: {}, // "olat,olon|dlat,dlon|mode" -> { sec, ts }

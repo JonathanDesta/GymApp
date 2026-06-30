@@ -106,6 +106,16 @@ input[type=time].sel,select.sel{min-width:120px}
 .btn.ghost{background:var(--chip);color:var(--accent)}
 .btn.sm{padding:8px 12px;font-size:13px}
 .btn:active{transform:translateY(1px)}
+/* embedded workout app */
+.wk-summary{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.wk-pill{flex:1;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:7px 10px;text-align:center}
+.wk-pill b{display:block;font-size:16px;color:var(--navy);font-weight:800;line-height:1.1}
+.wk-pill span{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.wk-open{flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--accent);text-decoration:none;padding:8px 10px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+.wk-cfg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:10px}
+.wk-cfg summary{font-weight:700;color:var(--navy);font-size:13px;cursor:pointer}
+.wk-cfg[open] summary{margin-bottom:6px}
+.workframe{width:100%;height:calc(100dvh - 215px);min-height:540px;border:1px solid var(--line);border-radius:14px;background:#fff;display:block}
 /* routine runner */
 .mstep{display:flex;justify-content:space-between;gap:10px;padding:6px 2px;border-bottom:1px solid var(--line);font-size:14px}
 .mstep:last-child{border-bottom:none}
