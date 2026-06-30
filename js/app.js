@@ -112,6 +112,7 @@ function todayView() {
         <div class="fld"><label>at (optional)</label><input id="ntTime" type="time" class="sel"></div>
         <div class="fld" style="flex:1"><label>where (optional)</label><input id="ntLoc" placeholder="address" class="sel" style="width:100%"></div>
       </div>
+      <div class="hint" style="margin:2px 0 0">Duration auto-estimates from the name — edit it if you like. Add a time to pin it, or leave blank to let the timeline slot it into open time.</div>
       <button class="btn primary" id="ntAdd">+ Add to today</button>
     </div></div>`;
   return h;
@@ -120,10 +121,32 @@ function badgeFor(s) {
   if (s.status === "conflict") return ` <span class="bdg red">conflict</span>`;
   if (s.status === "moved") return ` <span class="bdg amber">moved</span>`;
   if (s.status === "tight") return ` <span class="bdg amber">tight</span>`;
+  if (s.flex) return ` <span class="bdg green">plan</span>`;
   if (s.source === "outlook") return ` <span class="bdg blue">school</span>`;
   if (s.source === "google") return ` <span class="bdg green">cal</span>`;
   return "";
 }
+// Rough, editable duration guess from a task's name (free, no LLM). Returns minutes.
+const TASK_EST = [
+  [/\b(call|phone|text|email|reply|dm|message)\b/i, 15],
+  [/\b(meeting|standup|sync|interview|consult)\b/i, 30],
+  [/\b(dentist|doctor|appt|appointment|haircut|barber|checkup|therapy)\b/i, 60],
+  [/\b(grocer|shop|errand|pick ?up|drop ?off|return|mail|post office|bank)\b/i, 45],
+  [/\b(clean|laundry|dishes|vacuum|chore|tidy|organize)\b/i, 30],
+  [/\b(study|read|review|homework|assignment|notes)\b/i, 60],
+  [/\b(research|paper|code|coding|build|develop|debug|model|train)\b/i, 90],
+  [/\b(website|content|edit|video|film|record|design|write|post)\b/i, 60],
+  [/\b(tutor|lesson|teach|session)\b/i, 60],
+  [/\b(cook|meal|lunch|dinner|breakfast|eat)\b/i, 30],
+  [/\b(workout|gym|run|lift|train)\b/i, 60],
+];
+function estimateTaskMinutes(name) {
+  const n = (name || "").trim();
+  if (!n) return null;
+  for (const [re, min] of TASK_EST) if (re.test(n)) return min;
+  return 30; // sensible default
+}
+
 function bindToday() {
   const rb = $("#refreshBtn"); if (rb) rb.onclick = () => { delete DATA.calCache[todayISO()]; refreshCalendars(todayISO()); const tl = computeTimeline(todayISO()); if (tl.pending.length) prefetchTravel(tl.pending); toast("Refreshing…"); };
   $$(".tlrow[data-go]").forEach(r => r.onclick = () => go(r.dataset.go));
@@ -132,6 +155,11 @@ function bindToday() {
   const tb = $("#tBed"); if (tb) tb.onchange = () => { dayPlan(todayISO()).bedTime = tb.value; persist("Bedtime set"); render(); };
   const td = $("#tDepart"); if (td) td.onchange = () => { dayPlan(todayISO()).workoutDepart = td.value; persist("Departure set"); render(); };
   const ts = $("#tSkip"); if (ts) ts.onchange = () => { dayPlan(todayISO()).workoutSkip = ts.checked; persist(ts.checked ? "Workout skipped" : "Workout back on"); render(); };
+  // Auto-estimate the duration from the name until the user edits the minutes.
+  const nmEl = $("#ntName"), ndEl = $("#ntDur");
+  let durTouched = false;
+  if (ndEl) ndEl.addEventListener("input", () => { durTouched = true; });
+  if (nmEl && ndEl) nmEl.addEventListener("input", () => { if (!durTouched) { const e = estimateTaskMinutes(nmEl.value); if (e) ndEl.value = e; } });
   const na = $("#ntAdd"); if (na) na.onclick = () => {
     const name = ($("#ntName").value || "").trim(); if (!name) { toast("Name the task"); return; }
     const dur = parseInt($("#ntDur").value, 10) || 30;
@@ -162,7 +190,9 @@ function settingsView() {
   h += `<div class="card"><div class="cardhd"><b>Calendars</b></div>
     <div class="frow"><label>Google Client ID</label><input id="sCid" class="sel" style="width:100%" placeholder="…apps.googleusercontent.com" value="${escapeAttr(S.googleClientId || "")}"></div>
     <div class="frow"><label>Use Google Calendar</label><input type="checkbox" id="sGcal" ${S.googleCalEnabled ? "checked" : ""}></div>
-    <div class="frow"><label>Google calendar IDs</label><input id="sGids" class="sel" style="width:100%" placeholder="primary, you@group.calendar.google.com" value="${escapeAttr((S.googleCalendarIds || ["primary"]).join(", "))}"></div>
+    <div class="frow"><label>Google calendar IDs (fixed)</label><input id="sGids" class="sel" style="width:100%" placeholder="primary, you@group.calendar.google.com" value="${escapeAttr((S.googleCalendarIds || ["primary"]).join(", "))}"></div>
+    <div class="frow"><label>Flexible work-block calendar IDs</label><input id="sFlex" class="sel" style="width:100%" placeholder="day-tasks@group.calendar.google.com" value="${escapeAttr((S.flexCalendarIds || []).join(", "))}"></div>
+    <div class="hint">Events on a <b>flexible</b> calendar become work blocks: the app keeps their duration but slots them into your open time instead of pinning them. Have Claude's morning briefing drop the day's to-dos here with estimated durations (see WORKFLOW.md). Tutoring &amp; classes stay on your fixed calendars.</div>
     <button class="btn ghost" id="sConnect">Connect / refresh Google</button>
     <div class="hint">Tap the sync chip (top-right) any time to reconnect. Personal Google events + Drive sync use this one sign-in.</div>
     <hr>
@@ -217,6 +247,7 @@ function bindSettings() {
   bind("#sCid", v => S.googleClientId = v.trim());
   const gc = $("#sGcal"); if (gc) gc.onchange = () => { S.googleCalEnabled = gc.checked; persist("Saved"); if (gc.checked && !accessToken) connectGoogle(); render(); };
   bind("#sGids", v => S.googleCalendarIds = v.split(",").map(x => x.trim()).filter(Boolean));
+  bind("#sFlex", v => S.flexCalendarIds = v.split(",").map(x => x.trim()).filter(Boolean));
   const cn = $("#sConnect"); if (cn) cn.onclick = connectGoogle;
   bind("#sIcs", v => S.outlookIcsUrl = v.trim());
   bind("#sProxy", v => S.corsProxy = v.trim());

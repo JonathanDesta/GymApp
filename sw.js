@@ -1,13 +1,14 @@
 // Day — Life Manager service worker.
 // Bump CACHE_VERSION on every deploy so old caches are purged and the new build
 // reaches the installed PWA without a reinstall.
-const CACHE_VERSION = "day-v5";
+const CACHE_VERSION = "day-v6";
 
 // App shell precached on install. index.html and the JS modules are fetched
 // network-first below, so a stale copy here is only ever an offline fallback.
 const SHELL = [
   "./",
   "./index.html",
+  "./WORKFLOW.md",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",

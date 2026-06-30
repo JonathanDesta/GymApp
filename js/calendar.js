@@ -20,9 +20,13 @@ function localMinOnDate(d, dayStart) {
 async function fetchGoogleEvents(dateISO) {
   if (!accessToken) return null;
   const { timeMin, timeMax, start } = dateRangeUTC(dateISO);
-  const ids = (DATA.settings.googleCalendarIds && DATA.settings.googleCalendarIds.length) ? DATA.settings.googleCalendarIds : ["primary"];
+  // Fixed-commitment calendars + flexible work-block calendars (Claude's briefing
+  // can drop the day's tasks onto a flex calendar; those flow into open time).
+  const flexIds = (DATA.settings.flexCalendarIds || []).filter(Boolean);
+  const fixedIds = ((DATA.settings.googleCalendarIds && DATA.settings.googleCalendarIds.length) ? DATA.settings.googleCalendarIds : ["primary"]).filter(id => flexIds.indexOf(id) < 0);
+  const jobs = fixedIds.map(id => ({ id, flex: false })).concat(flexIds.map(id => ({ id, flex: true })));
   const out = [];
-  for (const calId of ids) {
+  for (const { id: calId, flex } of jobs) {
     const url = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(calId) +
       "/events?singleEvents=true&orderBy=startTime&timeMin=" + encodeURIComponent(timeMin) + "&timeMax=" + encodeURIComponent(timeMax);
     const r = await fetch(url, { headers: { Authorization: "Bearer " + accessToken } });
@@ -38,7 +42,7 @@ async function fetchGoogleEvents(dateISO) {
         startMin = localMinOnDate(new Date(ev.start.dateTime), start);
         endMin = localMinOnDate(new Date(ev.end.dateTime), start);
       }
-      out.push({ id: "g_" + (ev.id || Math.random()), source: "google", title: ev.summary || "(no title)", startMin, endMin, allDay, location: ev.location || "" });
+      out.push({ id: "g_" + (ev.id || Math.random()), source: "google", title: ev.summary || "(no title)", startMin, endMin, allDay, location: ev.location || "", flex });
     });
   }
   return out;

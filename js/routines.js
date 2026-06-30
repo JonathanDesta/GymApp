@@ -35,8 +35,6 @@ const ROUTINE_SEED = [
   { id: "clipnails", name: "Clip nails", targetSec: 300, days: ["Sun"] },
   { id: "vacuum", name: "Vacuum", targetSec: 600, days: ["Sun"] },
   { id: "cleanears", name: "Clean out ears", targetSec: 180, days: ["Sun"] },
-  { id: "website", name: "Website business", targetSec: 1800, days: "daily" },
-  { id: "content", name: "Content creation", targetSec: 2700, days: "daily" },
 ];
 
 const NIGHT_SEED = [

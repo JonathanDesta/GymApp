@@ -79,7 +79,10 @@ function computeTimeline(dateISO) {
   let morningEnd = wakeMin + mDur;
 
   // ── 2. Calendar events + fixed tasks → outings with travel ──
-  const events = cachedEventsFor(dateISO).filter(e => !e.allDay).map(e => ({ ...e, kind: "event" }));
+  // Events on a "flexible" calendar are work blocks (duration-based, gap-filled),
+  // not fixed appointments — handled in §4 with the other flexible tasks.
+  const events = cachedEventsFor(dateISO).filter(e => !e.allDay && !e.flex).map(e => ({ ...e, kind: "event" }));
+  const flexEvents = cachedEventsFor(dateISO).filter(e => !e.allDay && e.flex);
   const allDayEvents = cachedEventsFor(dateISO).filter(e => e.allDay);
   const fixedTasks = (plan.tasks || []).filter(t => t.fixedStart != null && hmToMin(t.fixedStart) != null)
     .map(t => ({ id: t.id, kind: "task", title: t.name, location: t.location || "", startMin: hmToMin(t.fixedStart), endMin: hmToMin(t.fixedStart) + (t.durMin || 30) }));
@@ -128,6 +131,16 @@ function computeTimeline(dateISO) {
     const place = findGap(occupied, morningEnd, bedMin - nDur, need, null);
     if (place == null) { conflicts.push(`Task "${t.name}" (${need} min) doesn't fit today.`); return; }
     add({ start: place, end: place + need, type: "task", label: t.name, sub: `${need} min`, status: "ok", taskId: t.id });
+  });
+
+  // Flexible work blocks from the briefing calendar → slot into open time,
+  // preferring the time Claude scheduled them but moving them if it's taken.
+  flexEvents.forEach(ev => {
+    const need = Math.max(10, (ev.endMin - ev.startMin) || 30);
+    const place = findGap(occupied, morningEnd, bedMin - nDur, need, ev.startMin);
+    if (place == null) { conflicts.push(`Work block "${ev.title}" (${need} min) doesn't fit today.`); return; }
+    const moved = Math.abs(place - ev.startMin) > 5;
+    add({ start: place, end: place + need, type: "task", label: ev.title, sub: `${need} min · work block` + (moved ? ` · from ${fmtClock(ev.startMin)}` : ""), status: "ok", flex: true });
   });
 
   // ── 4b. Travel chain ──

@@ -23,6 +23,7 @@ function defaultData() {
   return {
     version: 1,
     updated: null,
+    migratedNoWorkBlocks: false, // one-time: drop website/content from morning routine
     // Routines (morning + nighttime) — same timed runner engine.
     routineConfig: { steps: [] },
     nightConfig: { steps: [] },
@@ -38,6 +39,7 @@ function defaultData() {
       googleClientId: DEFAULT_CLIENT_ID,
       googleCalEnabled: false,
       googleCalendarIds: ["primary"],
+      flexCalendarIds: [],          // calendars whose events are flexible work blocks
       outlookIcsUrl: "",
       corsProxy: "",                // optional, for Outlook ICS if it blocks CORS
       homeAddress: "",
@@ -91,6 +93,14 @@ function normalizeData() {
     };
   }
   if (typeof DATA.nightConfig.transitionSec !== "number") DATA.nightConfig.transitionSec = 45;
+
+  // One-time removal of the website/content blocks from the morning routine
+  // (kept as edits to existing data so other custom tweaks survive).
+  if (!DATA.migratedNoWorkBlocks) {
+    if (DATA.routineConfig && Array.isArray(DATA.routineConfig.steps))
+      DATA.routineConfig.steps = DATA.routineConfig.steps.filter(s => s.id !== "website" && s.id !== "content");
+    DATA.migratedNoWorkBlocks = true;
+  }
 
   if (!Array.isArray(DATA.routineLog)) DATA.routineLog = [];
   if (!Array.isArray(DATA.nightLog)) DATA.nightLog = [];
