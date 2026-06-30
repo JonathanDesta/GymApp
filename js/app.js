@@ -211,7 +211,8 @@ function settingsView() {
 
   h += `<div class="card"><div class="cardhd"><b>Data</b></div>
     <button class="btn ghost" id="sExport">Export backup (JSON)</button>
-    <div class="hint">Version ${DATA.version} · last synced ${DATA.updated ? new Date(DATA.updated).toLocaleString() : "never"}.</div>
+    <button class="btn ghost" id="sReset" style="margin-top:8px">Reset to my preset</button>
+    <div class="hint">"Reset to my preset" restores home/gym, wake/bed, gym time, training days and travel prefs to your saved baseline. It does <b>not</b> touch your Google/Outlook/TomTom credentials. Version ${DATA.version} · last synced ${DATA.updated ? new Date(DATA.updated).toLocaleString() : "never"}.</div>
   </div>`;
   return h;
 }
@@ -239,6 +240,10 @@ function bindSettings() {
   const ex = $("#sExport"); if (ex) ex.onclick = () => {
     const blob = new Blob([JSON.stringify(DATA, null, 2)], { type: "application/json" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "day-backup-" + todayISO() + ".json"; a.click();
+  };
+  const rs = $("#sReset"); if (rs) rs.onclick = () => {
+    if (!confirm("Restore home/gym, wake/bed, gym time, training days and travel prefs to your preset? Your calendar/Drive/TomTom credentials are kept.")) return;
+    applyPreset(); persist("Preset restored"); render();
   };
 }
 

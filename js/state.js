@@ -17,6 +17,28 @@ let accessToken = null; // in-memory only — never persisted
 let tokenClient = null; // GIS token client
 let fileId = null;      // cached Drive file id for in-place PATCH
 
+// ─── Personal preset ──────────────────────────────────────────────────────────
+// Jonathan's non-credential defaults — seeded on a fresh install, re-applied once
+// via migration, and re-appliable any time from Settings → "Reset to my preset".
+// Credentials (Google Client ID, Outlook .ics, TomTom key) are deliberately NOT
+// here — they're entered once in Settings and kept out of the public repo.
+const PRESET_SETTINGS = {
+  homeAddress: "1094 Sans Souci Way",
+  gymAddress: "Crunch Chamblee",
+  wakeTime: "08:30",
+  bedTime: "00:45",          // 12:45 AM (after midnight — the timeline rolls it over)
+  travelMode: "driving",
+  trafficProvider: "tomtom", // live/predictive; falls back to the free estimate until a key is added
+};
+const PRESET_WORKOUT = {
+  departTime: "15:00",       // leave the house for the gym ~3:00 PM
+  days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], // all 7 — the program's own rest days decide
+};
+function applyPreset() {
+  Object.assign(DATA.settings, PRESET_SETTINGS);
+  Object.assign(DATA.workout, PRESET_WORKOUT);
+}
+
 // ─── Data model ───────────────────────────────────────────────────────────────
 let DATA = defaultData();
 function defaultData() {
@@ -24,36 +46,29 @@ function defaultData() {
     version: 1,
     updated: null,
     migratedNoWorkBlocks: false, // one-time: drop website/content from morning routine
+    presetApplied: false,        // one-time: seed Jonathan's personal preset onto an existing install
     // Routines (morning + nighttime) — same timed runner engine.
     routineConfig: { steps: [] },
     nightConfig: { steps: [] },
     routineLog: [],
     nightLog: [],
     // Workout duration mirror (no exercise logging — the sister app does that).
-    workout: {
+    workout: Object.assign({
       blockId: 1, weekInBlock: 0, cutting: false,
-      departTime: "15:00",          // default "leave the house for the gym" time
-      days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], // weekdays you train (Sun = rest by default)
-    },
-    settings: {
+    }, PRESET_WORKOUT),
+    settings: Object.assign({
       googleClientId: DEFAULT_CLIENT_ID,
       googleCalEnabled: false,
       googleCalendarIds: ["primary"],
       flexCalendarIds: [],          // calendars whose events are flexible work blocks
       outlookIcsUrl: "",
       corsProxy: "",                // optional, for Outlook ICS if it blocks CORS
-      homeAddress: "",
-      gymAddress: "",
-      wakeTime: "07:00",
-      bedTime: "23:00",
-      travelMode: "driving",        // driving | walking | transit (transit needs Google key)
-      trafficProvider: "free",      // "free" = time-of-day estimate, "tomtom" = live/predictive, "none"
       trafficIntensity: 0.5,        // 0..1 rush-hour severity for the free estimate
       tomtomKey: "",                // free TomTom API key for live/predictive traffic
       mapsApiKey: "",               // optional Google key for live/traffic travel time
       defaultTravelMin: 15,         // fallback buffer when no route can be computed
       workoutAppUrl: "https://jonathandesta.github.io/oly-tracker/", // embedded in the Workout tab
-    },
+    }, PRESET_SETTINGS),
     olyState: null, // synced snapshot of the embedded workout app: { data:<oly_state>, ts }
     places: {},     // normalizedAddress -> { lat, lon, label, ts }
     routeCache: {}, // "olat,olon|dlat,dlon|mode" -> { sec, ts }
@@ -93,6 +108,13 @@ function normalizeData() {
     };
   }
   if (typeof DATA.nightConfig.transitionSec !== "number") DATA.nightConfig.transitionSec = 45;
+
+  // One-time: push the personal preset onto an existing install (non-credential
+  // fields only — never touches Google Client ID / Outlook URL / TomTom key).
+  if (!DATA.presetApplied) {
+    applyPreset();
+    DATA.presetApplied = true;
+  }
 
   // One-time removal of the website/content blocks from the morning routine
   // (kept as edits to existing data so other custom tweaks survive).
