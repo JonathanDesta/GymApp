@@ -123,6 +123,11 @@ function computeTimeline(dateISO) {
       const moved = Math.abs(place - pref) > 5;
       // the workout sits at the gym; the chain pass adds travel to/from it.
       add({ start: place + tTo.min, end: place + tTo.min + workMin, type: "workout", label: "Workout", sub: `${workMin} min · ${workoutBlockName(workoutBlockState().blockId)}` + (moved ? ` · moved from ${fmtClock(pref)}` : ""), status: moved ? "moved" : "ok", go: "Workout", location: gym });
+      // Reserve the travel legs too — the chain pass only adds the actual travel
+      // segments later (after flexible tasks are placed), so without this a
+      // flexible task could be slotted into the drive-to/from-gym window.
+      if (tTo.min > 0) occupied.push({ start: place, end: place + tTo.min });
+      if (tBack.min > 0) occupied.push({ start: place + tTo.min + workMin, end: place + tTo.min + workMin + tBack.min });
       if (moved) conflicts.push(`Workout moved to ${fmtClock(place)} (your ${fmtClock(pref)} slot was taken).`);
     }
   }

@@ -72,7 +72,17 @@ function icsOccursOn(vev, targetDay) {
   const ds = vev.start.date;
   const dsMid = new Date(ds.getFullYear(), ds.getMonth(), ds.getDate());
   const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  if (!vev.rrule) return sameDay(dsMid, targetDay);
+  if (!vev.rrule) {
+    // Multi-day all-day events span [DTSTART, DTEND) with an exclusive end date;
+    // show on every day in that range (single-day events carry DTEND = next day).
+    if (vev.start.dateOnly) {
+      const de = vev.end && vev.end.date;
+      let endExcl = de ? new Date(de.getFullYear(), de.getMonth(), de.getDate()) : new Date(dsMid.getTime() + 86400000);
+      if (endExcl <= dsMid) endExcl = new Date(dsMid.getTime() + 86400000); // malformed/zero-length → single day
+      return targetDay >= dsMid && targetDay < endExcl;
+    }
+    return sameDay(dsMid, targetDay);
+  }
   if (targetDay < dsMid) return false;
   const r = vev.rrule;
   if (r.UNTIL) { const u = parseICSDate(r.UNTIL, "").date; if (targetDay > u) return false; }
