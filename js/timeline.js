@@ -182,13 +182,22 @@ function computeTimeline(dateISO) {
     if (tv.min > 0) add({ start: prevEnd, end: prevEnd + tv.min, type: "travel", label: "Travel home", sub: travelSub(tv), status: "ok", location: home });
   }
 
-  // ── 5. Nighttime routine — ends at bedtime ──
+  // ── 5. Nighttime routine — ends at bedtime, or before going out ──
+  // If you're going out, the routine (shower, skincare, etc.) moves to finish
+  // before you leave instead of at bedtime.
   if (nDur > 0) {
-    const nightStart = bedMin - nDur;
-    const lastBusy = occupied.filter(o => o.end <= bedMin + 1).reduce((m, o) => Math.max(m, o.end), morningEnd);
+    let nightOut = (plan.nightMode === "beforeOut" && hmToMin(plan.nightOutTime) != null) ? hmToMin(plan.nightOutTime) : null;
+    if (nightOut != null && nightOut <= wakeMin) nightOut += 1440; // late-night out
+    const nightEnd = nightOut != null ? nightOut : bedMin;
+    const nightStart = nightEnd - nDur;
+    const lastBusy = occupied.filter(o => o.end <= nightEnd + 1).reduce((m, o) => Math.max(m, o.end), morningEnd);
     const status = nightStart < lastBusy - 1 ? "conflict" : "ok";
-    if (status === "conflict") conflicts.push(`Your day runs to ${fmtClock(lastBusy)} but the night routine needs to start by ${fmtClock(nightStart)} for a ${fmtClock(bedMin)} bedtime.`);
-    add({ start: nightStart, end: bedMin, type: "routine", label: "Nighttime routine", sub: `${nDur} min · ends ${fmtClock(bedMin)}`, status, go: "Night" });
+    if (status === "conflict") {
+      if (nightOut != null) conflicts.push(`To finish the night routine before going out at ${fmtClock(nightEnd)} you'd need to start by ${fmtClock(nightStart)}, but your day runs to ${fmtClock(lastBusy)}.`);
+      else conflicts.push(`Your day runs to ${fmtClock(lastBusy)} but the night routine needs to start by ${fmtClock(nightStart)} for a ${fmtClock(bedMin)} bedtime.`);
+    }
+    const sub = nightOut != null ? `${nDur} min · before you go out (${fmtClock(nightEnd)})` : `${nDur} min · ends ${fmtClock(bedMin)}`;
+    add({ start: nightStart, end: nightEnd, type: "routine", label: "Nighttime routine", sub, status, go: "Night" });
   }
 
   // ── 6. Fill the gaps with free time ──

@@ -96,6 +96,16 @@ function todayView() {
     h += `<div class="frow"><label>Gym departure</label><input type="time" id="tDepart" class="sel" value="${minToHM(workoutDepartMin(todayISO()))}"></div>
     <div class="frow"><label>Skip workout today</label><input type="checkbox" id="tSkip" ${workoutSkippedFor(todayISO()) ? "checked" : ""}></div>`;
   }
+  // night routine: at bedtime, or moved before you go out
+  const nMode = plan.nightMode === "beforeOut" ? "beforeOut" : "bed";
+  const evDeparts = tl.segments.filter(s => s.type === "travel" && s.label.indexOf("home") < 0 && (s.start % 1440) >= 16 * 60);
+  const suggestOut = evDeparts.length ? minToHM(evDeparts[evDeparts.length - 1].start % 1440) : "20:00";
+  h += `<div class="frow"><label>Night routine</label>
+    <select id="tNightMode" class="sel">
+      <option value="bed" ${nMode === "bed" ? "selected" : ""}>At bedtime</option>
+      <option value="beforeOut" ${nMode === "beforeOut" ? "selected" : ""}>Before I go out</option>
+    </select></div>`;
+  if (nMode === "beforeOut") h += `<div class="frow"><label>Finish before I leave at</label><input type="time" id="tNightOut" class="sel" value="${plan.nightOutTime || suggestOut}"></div>`;
   h += `</div>`;
 
   // ad-hoc tasks
@@ -134,6 +144,16 @@ function bindToday() {
   const tb = $("#tBed"); if (tb) tb.onchange = () => { dayPlan(todayISO()).bedTime = tb.value; persist("Bedtime set"); render(); };
   const td = $("#tDepart"); if (td) td.onchange = () => { dayPlan(todayISO()).workoutDepart = td.value; persist("Departure set"); render(); };
   const ts = $("#tSkip"); if (ts) ts.onchange = () => { dayPlan(todayISO()).workoutSkip = ts.checked; persist(ts.checked ? "Workout skipped" : "Workout back on"); render(); };
+  const tnm = $("#tNightMode"); if (tnm) tnm.onchange = () => {
+    const p = dayPlan(todayISO()); p.nightMode = tnm.value;
+    if (tnm.value === "beforeOut" && !p.nightOutTime) {
+      const tl2 = computeTimeline(todayISO());
+      const ev = tl2.segments.filter(s => s.type === "travel" && s.label.indexOf("home") < 0 && (s.start % 1440) >= 16 * 60);
+      p.nightOutTime = ev.length ? minToHM(ev[ev.length - 1].start % 1440) : "20:00";
+    }
+    persist("Night routine set"); render();
+  };
+  const tno = $("#tNightOut"); if (tno) tno.onchange = () => { dayPlan(todayISO()).nightOutTime = tno.value; persist("Leave-by set"); render(); };
   const na = $("#ntAdd"); if (na) na.onclick = () => {
     const name = ($("#ntName").value || "").trim(); if (!name) { toast("Name the task"); return; }
     const dur = parseInt($("#ntDur").value, 10) || 30;
