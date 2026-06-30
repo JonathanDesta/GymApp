@@ -30,7 +30,7 @@ async function fetchGoogleEvents(dateISO) {
     const url = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(calId) +
       "/events?singleEvents=true&orderBy=startTime&timeMin=" + encodeURIComponent(timeMin) + "&timeMax=" + encodeURIComponent(timeMax);
     const r = await fetch(url, { headers: { Authorization: "Bearer " + accessToken } });
-    if (r.status === 401) { accessToken = null; throw new Error("token expired"); }
+    if (r.status === 401) { dropToken(); throw new Error("token expired"); }
     if (!r.ok) continue;
     const j = await r.json();
     (j.items || []).forEach(ev => {

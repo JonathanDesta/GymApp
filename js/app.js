@@ -334,12 +334,19 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
   normalizeData();
   if (typeof seedOlyDown === "function") seedOlyDown(); // hydrate workout state for the timeline
   render();
-  setSync("connect Google", "warn");
-  // Pre-init the GIS token client so the first tap is instant.
+  // Resume a still-valid Google session so reopening the app stays signed in.
+  const tok = loadToken();
+  if (tok) { accessToken = tok; setSync("syncing…"); onConnected(); }
+  else setSync(googleLinked() ? "reconnecting…" : "connect Google", googleLinked() ? "" : "warn");
+  // Pre-init the GIS token client (so the first tap is instant) and, for a user
+  // who has linked before but whose cached token has expired, silently refresh it.
   let tries = 0;
   const t = setInterval(() => {
-    if (gisAvailable()) { initTokenClient(); clearInterval(t); }
-    else if (++tries > 40) clearInterval(t);
+    if (gisAvailable()) {
+      initTokenClient();
+      clearInterval(t);
+      if (!accessToken && googleLinked()) trySilentConnect();
+    } else if (++tries > 40) clearInterval(t);
   }, 250);
 })();
 

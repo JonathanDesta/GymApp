@@ -13,9 +13,32 @@ const GOOGLE_SCOPES =
 const DRIVE_FILENAME = "day_lifemanager.json";
 const CACHE_KEY = "day_cache_v1";
 
-let accessToken = null; // in-memory only — never persisted
+let accessToken = null; // current token (also cached below so reopening stays signed in)
 let tokenClient = null; // GIS token client
 let fileId = null;      // cached Drive file id for in-place PATCH
+let silentMode = false; // true while re-authing in the background — suppresses the "cancelled" toast
+
+// ─── Stay-signed-in token cache ───────────────────────────────────────────────
+// Google access tokens last ~1 hour. We remember that the user linked Google
+// (day_google_linked) and cache the live token with its expiry (day_google_tok)
+// so reopening the app within the hour is instant, and after that we silently
+// re-request a token (no tap) whenever a Google session is still available.
+const TOKKEY = "day_google_tok";
+function googleLinked() { try { return localStorage.getItem("day_google_linked") === "1"; } catch (e) { return false; } }
+function setGoogleLinked(v) { try { v ? localStorage.setItem("day_google_linked", "1") : localStorage.removeItem("day_google_linked"); } catch (e) {} }
+function saveToken(tok, expiresInSec) { try { localStorage.setItem(TOKKEY, JSON.stringify({ t: tok, exp: Date.now() + (expiresInSec || 3600) * 1000 })); } catch (e) {} }
+function loadToken() { try { const o = JSON.parse(localStorage.getItem(TOKKEY)); if (o && o.t && o.exp && Date.now() < o.exp - 60000) return o.t; } catch (e) {} return null; }
+function clearToken() { try { localStorage.removeItem(TOKKEY); } catch (e) {} }
+function dropToken() { accessToken = null; clearToken(); } // a 401 means the token died — forget it
+// Silently re-acquire a token (no UI) for a user who has linked Google before.
+function trySilentConnect() {
+  if (silentMode) return false; // an attempt is already in flight — don't double-fire
+  if (!clientId() || !googleLinked()) return false;
+  if (!initTokenClient()) return false;
+  silentMode = true;
+  setSync("reconnecting…");
+  try { tokenClient.requestAccessToken({ prompt: "" }); return true; } catch (e) { silentMode = false; return false; }
+}
 
 // ─── Personal preset ──────────────────────────────────────────────────────────
 // Jonathan's non-credential defaults — seeded on a fresh install, re-applied once
@@ -163,7 +186,11 @@ function persist(okMsg) {
   setSync("syncing…");
   saveDrive()
     .then(() => { setSync("synced ✓", "ok"); if (okMsg) toast(okMsg + " · synced"); })
-    .catch(() => { setSync("saved on device", "warn"); if (okMsg) toast(okMsg + " · sync retry next save"); });
+    .catch(() => {
+      setSync("saved on device", "warn"); if (okMsg) toast(okMsg + " · sync retry next save");
+      // token may have expired mid-session — quietly refresh it for the next save
+      if (!accessToken && googleLinked() && gisAvailable()) trySilentConnect();
+    });
 }
 
 // ─── Google Identity Services ─────────────────────────────────────────────────
@@ -175,10 +202,14 @@ function initTokenClient() {
     client_id: clientId(),
     scope: GOOGLE_SCOPES,
     callback: (resp) => {
-      if (resp && resp.access_token) { accessToken = resp.access_token; onConnected(); }
-      else setSync("connect Google", "warn");
+      if (resp && resp.access_token) {
+        accessToken = resp.access_token;
+        saveToken(resp.access_token, resp.expires_in);
+        setGoogleLinked(true); silentMode = false;
+        onConnected();
+      } else setSync("connect Google", "warn");
     },
-    error_callback: () => { setSync("connect Google", "warn"); toast("Sign-in cancelled"); },
+    error_callback: () => { setSync("connect Google", "warn"); if (!silentMode) toast("Sign-in cancelled"); silentMode = false; },
   });
   return tokenClient;
 }
@@ -200,6 +231,7 @@ async function onConnected() {
     if (DATA.settings.googleCalEnabled && typeof refreshCalendars === "function") refreshCalendars();
   } catch (e) {
     setSync("offline · using device", "warn");
+    if (!accessToken && googleLinked() && gisAvailable()) trySilentConnect();
   }
 }
 function reconcile(remote) {
@@ -219,7 +251,7 @@ async function findFile() {
   const url = "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(q) +
     "&spaces=drive&fields=files(id,modifiedTime)";
   const r = await fetch(url, { headers: { Authorization: "Bearer " + accessToken } });
-  if (r.status === 401) { accessToken = null; throw new Error("token expired"); }
+  if (r.status === 401) { dropToken(); throw new Error("token expired"); }
   if (!r.ok) throw new Error("find " + r.status);
   const j = await r.json();
   fileId = (j.files && j.files.length) ? j.files[0].id : null;
@@ -231,7 +263,7 @@ async function loadDrive() {
   if (!fileId) return null;
   const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
     { headers: { Authorization: "Bearer " + accessToken } });
-  if (r.status === 401) { accessToken = null; throw new Error("token expired"); }
+  if (r.status === 401) { dropToken(); throw new Error("token expired"); }
   if (!r.ok) throw new Error("load " + r.status);
   return await r.json();
 }
@@ -254,7 +286,7 @@ async function saveDrive() {
       headers: { Authorization: "Bearer " + accessToken, "Content-Type": "multipart/related; boundary=" + boundary },
       body: multipart,
     });
-    if (r.status === 401) { accessToken = null; throw new Error("token expired"); }
+    if (r.status === 401) { dropToken(); throw new Error("token expired"); }
     if (!r.ok) throw new Error("create " + r.status);
     const j = await r.json();
     fileId = j.id;
@@ -264,7 +296,7 @@ async function saveDrive() {
       headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json; charset=UTF-8" },
       body: body,
     });
-    if (r.status === 401) { accessToken = null; throw new Error("token expired"); }
+    if (r.status === 401) { dropToken(); throw new Error("token expired"); }
     if (!r.ok) throw new Error("save " + r.status);
   }
 }
