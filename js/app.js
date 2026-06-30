@@ -57,6 +57,9 @@ function todayView() {
   else if (tl.wakeBy != null) h += `<div class="hero-leave">First commitment is covered — wake by ${fmtClock(tl.wakeBy)} leaves you on time.</div>`;
   h += `</div>`;
 
+  // night-before look-ahead (evening only on the Today tab)
+  h += lookAheadHTML(false);
+
   // conflicts
   if (tl.conflicts.length) {
     h += `<div class="card alert"><div class="alert-h">⚠ ${tl.conflicts.length} conflict${tl.conflicts.length !== 1 ? "s" : ""} to resolve</div>`;
@@ -136,7 +139,55 @@ function badgeFor(s) {
   if (s.source === "google") return ` <span class="bdg green">cal</span>`;
   return "";
 }
+// ─── Night-before look-ahead ──────────────────────────────────────────────────
+// Reads tomorrow's calendar and, if a morning commitment would clash with the
+// morning routine, tells you the wake-by time and offers: wake earlier, move
+// reading to its own block, or both. Shown in the evening on Today + on Night start.
+function lookAheadHTML(force) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  if (!force && nowMin < 17 * 60) return ""; // only surfaces in the evening on Today
+  const tISO = tomorrowISO();
+  const tl = computeTimeline(tISO);
+  if (!tl.morningClash || !tl.firstCommit) return "";
+  const fc = tl.firstCommit;
+  const dowName = new Date(tISO + "T00:00:00").toLocaleDateString(undefined, { weekday: "long" });
+  const wakeByClock = fmtClock(tl.wakeBy);
+  const p = DATA.dayPlans[tISO] || {};
+  const readingInRoutine = routineSteps(DATA.routineConfig, dowForISO(tISO)).some(s => s.id === "read");
+  const readingDropped = (p.dropSteps || []).indexOf("read") >= 0;
+  let h = `<div class="card lookahead"><div class="la-h">🌙 Heads up for tomorrow (${dowName})</div>
+    <div class="la-l"><b>${escapeHtml(fc.title)}</b> at ${fmtClock(fc.startMin)}${fc.travelMin ? " · " + fc.travelMin + " min away" : ""} starts before your morning routine would finish.</div>
+    <div class="la-l">To keep your full routine, <b>wake by ${wakeByClock}</b>.</div>
+    <div class="la-btns">
+      <button class="btn primary sm" id="laWake">Set tomorrow's wake to ${wakeByClock}</button>`;
+  if (readingInRoutine && !readingDropped) h += `<button class="btn ghost sm" id="laDropRead">Move reading to its own block</button>`;
+  h += `</div>`;
+  if (readingDropped) h += `<div class="la-note">✓ Reading is moved into its own block tomorrow (routine ends earlier). <a id="laUndo">undo</a></div>`;
+  return h + `</div>`;
+}
+function bindLookAhead() {
+  const lw = $("#laWake"); if (lw) lw.onclick = () => {
+    const tISO = tomorrowISO(), tl = computeTimeline(tISO);
+    if (tl.wakeBy == null) return;
+    dayPlan(tISO).wakeTime = minToHM(((tl.wakeBy % 1440) + 1440) % 1440);
+    persist("Tomorrow's wake set"); render();
+  };
+  const ld = $("#laDropRead"); if (ld) ld.onclick = () => {
+    const p = dayPlan(tomorrowISO());
+    p.dropSteps = Array.from(new Set([...(p.dropSteps || []), "read"]));
+    if (!p.tasks.some(t => t.id === "read_moved")) p.tasks.push({ id: "read_moved", name: "Read + take notes — 2 chapters", durMin: 90, fixedStart: null, location: "" });
+    persist("Reading moved to its own block"); render();
+  };
+  const lu = $("#laUndo"); if (lu) lu.onclick = () => {
+    const p = dayPlan(tomorrowISO());
+    p.dropSteps = (p.dropSteps || []).filter(x => x !== "read");
+    p.tasks = p.tasks.filter(t => t.id !== "read_moved");
+    persist("Reading restored to the routine"); render();
+  };
+}
+
 function bindToday() {
+  bindLookAhead();
   const rb = $("#refreshBtn"); if (rb) rb.onclick = () => { delete DATA.calCache[todayISO()]; refreshCalendars(todayISO()); const tl = computeTimeline(todayISO()); if (tl.pending.length) prefetchTravel(tl.pending); toast("Refreshing…"); };
   $$(".tlrow[data-go]").forEach(r => r.onclick = () => go(r.dataset.go));
   $$(".taskdel").forEach(b => b.onclick = () => { const p = dayPlan(todayISO()); p.tasks = p.tasks.filter(t => t.id !== b.dataset.del); persist("Task removed"); render(); });
@@ -164,16 +215,19 @@ function bindToday() {
   };
 }
 // Background pulls for the Today view (calendars + travel), guarded so they settle.
-let kickedFor = null;
-function kickTodayData() {
-  const today = todayISO();
-  const cache = DATA.calCache[today];
+let kickedFor = null, kickedTomorrowFor = null;
+function calConfigured() { return (DATA.settings.googleCalEnabled && accessToken) || (DATA.settings.outlookIcsUrl || "").trim(); }
+function kickDay(iso, guardGet, guardSet) {
+  const cache = DATA.calCache[iso];
   const stale = !cache || (Date.now() - (cache.ts || 0) > 1000 * 60 * 20);
-  if ((DATA.settings.googleCalEnabled && accessToken) || (DATA.settings.outlookIcsUrl || "").trim()) {
-    if (stale && kickedFor !== today) { kickedFor = today; refreshCalendars(today); }
-  }
-  const tl = computeTimeline(today);
+  if (calConfigured() && stale && guardGet() !== iso) { guardSet(iso); refreshCalendars(iso); }
+  const tl = computeTimeline(iso);
   if (tl.pending.length) prefetchTravel(tl.pending);
+}
+function kickTodayData() {
+  kickDay(todayISO(), () => kickedFor, v => kickedFor = v);
+  // In the evening, also pull tomorrow so the night-before look-ahead has data.
+  if (new Date().getHours() >= 17) kickDay(tomorrowISO(), () => kickedTomorrowFor, v => kickedTomorrowFor = v);
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

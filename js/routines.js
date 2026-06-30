@@ -73,10 +73,18 @@ function routineSteps(cfg, dow) {
   dow = dow || todayDOW();
   return (cfg.steps || []).filter(s => stepRunsOn(s, dow));
 }
-function todaySteps() { return routineSteps(RCFG(), todayDOW()); }
-// Total seconds a routine will take today (caps + transition buffer) — used by the timeline.
-function routineBudgetSec(cfg, dow) {
-  const steps = routineSteps(cfg, dow);
+// Steps the morning routine drops for a given date (per-day "amputations").
+function morningDropFor(dateISO) { const p = DATA.dayPlans[dateISO]; return (p && p.dropSteps) || []; }
+function applyDrop(steps, drop) { return (drop && drop.length) ? steps.filter(s => drop.indexOf(s.id) < 0) : steps; }
+function todaySteps() {
+  let steps = routineSteps(RCFG(), todayDOW());
+  if (CUR !== "Night") steps = applyDrop(steps, morningDropFor(todayISO())); // honor today's morning drops
+  return steps;
+}
+// Total seconds a routine will take (caps + transition buffer) — used by the timeline.
+// `drop` (optional) = step ids removed that day (e.g. reading moved to its own block).
+function routineBudgetSec(cfg, dow, drop) {
+  const steps = applyDrop(routineSteps(cfg, dow), drop);
   return steps.reduce((s, x) => s + x.targetSec, 0) + transSec(cfg) * steps.length;
 }
 
@@ -162,6 +170,8 @@ function routineStartView() {
   const avg = last7Avg();
   const when = CUR === "Night" ? "Tonight" : "Today is " + todayDOW();
   let h = `<div class="daysub">${when} · ${today.length} step${today.length !== 1 ? "s" : ""} · budget ~${Math.round(budget / 60)} min${tr ? ` <span class="muted">(incl. ${tr}s/step transition)</span>` : ""}</div>`;
+  // Night-before look-ahead lives at the top of the Night start screen.
+  if (CUR === "Night" && typeof lookAheadHTML === "function") h += lookAheadHTML(true);
   const budgetLbl = (CUR === "Night" ? "Tonight's" : "Today's") + " budget";
   h += `<div class="kpis">
     <div class="kpi"><div class="v">~${Math.round(budget / 60)}m</div><div class="l">${budgetLbl}</div></div>
@@ -338,6 +348,7 @@ function renderBgChip() {
 }
 function bindRoutine() {
   if (routineInt) { clearInterval(routineInt); routineInt = null; }
+  if (CUR === "Night" && typeof bindLookAhead === "function") bindLookAhead();
   const steps = RCFG().steps;
   const sr = $("#startRoutine"); if (sr) sr.onclick = startRoutine;
   const et = $("#editToggle"); if (et) et.onclick = () => { editMode = !editMode; render(); };

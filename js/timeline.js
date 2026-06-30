@@ -69,13 +69,15 @@ function computeTimeline(dateISO) {
   const occupied = []; // fixed/placed intervals to avoid
 
   const dow = DOW[new Date(dateISO + "T00:00:00").getDay()];
-  const mDur = Math.round(routineBudgetSec(DATA.routineConfig, dow) / 60);
+  const dropList = plan.dropSteps || []; // morning steps amputated for this date
+  const mDur = Math.round(routineBudgetSec(DATA.routineConfig, dow, dropList) / 60);
   const nDur = Math.round(routineBudgetSec(DATA.nightConfig, dow) / 60);
 
   function add(seg) { segments.push(seg); if (seg.blocks !== false) occupied.push({ start: seg.start, end: seg.end }); }
 
   // ── 1. Morning routine — anchored at wake ──
-  if (mDur > 0) add({ start: wakeMin, end: wakeMin + mDur, type: "routine", label: "Morning routine", sub: `${mDur} min · ${todayRoutineCount(DATA.routineConfig, dow)} steps`, status: "ok", go: "Morning" });
+  const mSteps = routineSteps(DATA.routineConfig, dow).filter(s => dropList.indexOf(s.id) < 0).length;
+  if (mDur > 0) add({ start: wakeMin, end: wakeMin + mDur, type: "routine", label: "Morning routine", sub: `${mDur} min · ${mSteps} steps` + (dropList.length ? ` · ${dropList.length} moved out` : ""), status: "ok", go: "Morning" });
   let morningEnd = wakeMin + mDur;
 
   // ── 2. Calendar events + fixed tasks → outings with travel ──
@@ -213,18 +215,23 @@ function computeTimeline(dateISO) {
   const departures = all.filter(s => s.type === "travel" && s.label.indexOf("home") < 0);
   let leaveBy = null;
   for (const d of departures) { if (nowMin < 0 || d.start >= nowMin) { leaveBy = { min: d.start, label: d.label.replace("Travel → ", "") }; break; } }
-  let wakeBy = null;
-  const firstLocated = anchored.find(a => a.location && a.location.trim());
-  if (firstLocated && home) {
-    const tv = travelMin(home, firstLocated.location, pending, firstLocated.startMin, dow);
-    wakeBy = firstLocated.startMin - tv.min - mDur;
+  // Wake-by = the latest you can wake and still finish the morning routine (+ any
+  // travel) before your EARLIEST commitment of the day — located or not.
+  let wakeBy = null, firstCommit = null;
+  const earliest = anchored.length ? anchored[0] : null;
+  if (earliest) {
+    const tvMin = (earliest.location && earliest.location.trim() && home) ? travelMin(home, earliest.location, pending, earliest.startMin, dow).min : 0;
+    wakeBy = earliest.startMin - tvMin - mDur;
+    firstCommit = { title: earliest.title, startMin: earliest.startMin, location: earliest.location || "", travelMin: tvMin };
   }
+  // Does the morning routine genuinely clash with that first commitment?
+  const morningClash = !!(firstCommit && wakeBy != null && wakeBy < wakeMin);
 
   const busyMin = all.filter(s => s.type !== "free").reduce((m, s) => m + (s.end - s.start), 0);
   return {
-    date: dateISO, wakeMin, bedMin, mDur, nDur, workMin,
+    date: dateISO, wakeMin, bedMin, mDur, nDur, workMin, dropList,
     segments: all, conflicts, allDayEvents,
-    leaveBy, wakeBy, busyMin, pending,
+    leaveBy, wakeBy, firstCommit, morningClash, busyMin, pending,
   };
 }
 

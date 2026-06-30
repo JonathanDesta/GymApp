@@ -276,6 +276,12 @@ function todayISO() {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 function todayDOW() { return DOW[new Date().getDay()]; }
+function isoForOffset(days) {
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function tomorrowISO() { return isoForOffset(1); }
+function dowForISO(iso) { return DOW[new Date(iso + "T00:00:00").getDay()]; }
 function setSync(t, cls) { const e = $("#sync"); if (e) { e.textContent = t; e.className = "sync" + (cls ? " " + cls : ""); } }
 function toast(t) { const e = $("#toast"); if (!e) return; e.textContent = t; e.classList.add("show"); setTimeout(() => e.classList.remove("show"), 2400); }
 function fmtSec(s) { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60); return m + ":" + String(s % 60).padStart(2, "0"); }
