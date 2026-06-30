@@ -191,7 +191,7 @@ async function prefetchTravel(pairs, mode) {
   mode = mode || (DATA.settings.travelMode || "driving");
   const today = (typeof todayISO === "function") ? todayISO() : new Date().toISOString().slice(0, 10);
   let changed = false;
-  for (const { origin, dest, whenMin, dow } of pairs) {
+  for (const { origin, dest, whenMin, dow, dateISO } of pairs) {
     if (!origin || !dest) continue;
     const o = await geocode(origin), d = await geocode(dest);
     if (!o || !d) continue;
@@ -201,7 +201,7 @@ async function prefetchTravel(pairs, mode) {
       if (DATA.routeCache[key] && (Date.now() - DATA.routeCache[key].ts < TT_TTL)) continue;
       if (travelInFlight.has(key)) continue;
       travelInFlight.add(key);
-      const res = await tomtomDuration(o, d, mode, whenMin, today);
+      const res = await tomtomDuration(o, d, mode, whenMin, dateISO || today);
       if (res) { DATA.routeCache[key] = { sec: res.sec, base: res.base, factor: res.factor, ts: Date.now() }; changed = true; }
       travelInFlight.delete(key);
       await new Promise(r => setTimeout(r, 350));

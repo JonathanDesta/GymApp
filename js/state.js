@@ -36,7 +36,9 @@ const PRESET_WORKOUT = {
 };
 function applyPreset() {
   Object.assign(DATA.settings, PRESET_SETTINGS);
-  Object.assign(DATA.workout, PRESET_WORKOUT);
+  // Clone days[] so toggling training days never mutates the PRESET_WORKOUT
+  // constant (which would corrupt a later "Reset to my preset").
+  Object.assign(DATA.workout, PRESET_WORKOUT, { days: PRESET_WORKOUT.days.slice() });
 }
 
 // ─── Data model ───────────────────────────────────────────────────────────────
@@ -55,7 +57,7 @@ function defaultData() {
     // Workout duration mirror (no exercise logging — the sister app does that).
     workout: Object.assign({
       blockId: 1, weekInBlock: 0, cutting: false,
-    }, PRESET_WORKOUT),
+    }, PRESET_WORKOUT, { days: PRESET_WORKOUT.days.slice() }),
     settings: Object.assign({
       googleClientId: DEFAULT_CLIENT_ID,
       googleCalEnabled: false,

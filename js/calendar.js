@@ -80,15 +80,22 @@ function icsOccursOn(vev, targetDay) {
   const dayDiff = Math.round((targetDay - dsMid) / 86400000);
   if (r.FREQ === "DAILY") return dayDiff % interval === 0;
   if (r.FREQ === "WEEKLY") {
-    const weekDiff = Math.floor(dayDiff / 7);
-    if (weekDiff % interval !== 0) {
-      // allow BYDAY within the correct week cadence
-      const startWeek = Math.floor((targetDay - dsMid) / (7 * 86400000));
-      if (startWeek % interval !== 0) return false;
-    }
+    // The day-of-week must match (BYDAY list, or the DTSTART weekday).
     const byday = r.BYDAY ? r.BYDAY.split(",").map(x => x.replace(/^[+-]?\d+/, "")) : null;
-    if (byday) return byday.some(d => ICS_DAYS[d] === targetDay.getDay()) && (Math.floor(dayDiff / 7) % interval === 0);
-    return targetDay.getDay() === dsMid.getDay() && (Math.floor(dayDiff / 7) % interval === 0);
+    const dowOK = byday ? byday.some(d => ICS_DAYS[d] === targetDay.getDay())
+                        : (targetDay.getDay() === dsMid.getDay());
+    if (!dowOK) return false;
+    if (interval <= 1) return true;
+    // Interval cadence is counted in whole calendar weeks, not in days-since-start:
+    // snap both dates back to the start of their week (WKST default Monday) so a
+    // BYDAY weekday earlier or later than DTSTART's weekday lands in the right week.
+    const weekStart = (dt) => {
+      const x = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+      x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // Mon=0 … Sun=6
+      return x;
+    };
+    const wkDiff = Math.round((weekStart(targetDay) - weekStart(dsMid)) / (7 * 86400000));
+    return wkDiff % interval === 0;
   }
   // MONTHLY/YEARLY: only the exact recurrence anniversary handled loosely.
   if (r.FREQ === "MONTHLY") return targetDay.getDate() === dsMid.getDate();

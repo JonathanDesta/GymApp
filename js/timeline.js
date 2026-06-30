@@ -227,6 +227,11 @@ function computeTimeline(dateISO) {
   // Does the morning routine genuinely clash with that first commitment?
   const morningClash = !!(firstCommit && wakeBy != null && wakeBy < wakeMin);
 
+  // Stamp the target date on each travel-prefetch request so predictive traffic
+  // (TomTom departAt) is fetched for the day the leg actually happens — important
+  // for tomorrow's night-before look-ahead, not just today.
+  pending.forEach(p => { if (p && !p.dateISO) p.dateISO = dateISO; });
+
   const busyMin = all.filter(s => s.type !== "free").reduce((m, s) => m + (s.end - s.start), 0);
   return {
     date: dateISO, wakeMin, bedMin, mDur, nDur, workMin, dropList,
