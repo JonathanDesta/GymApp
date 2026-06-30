@@ -90,10 +90,26 @@ function trafficFactor(departMin, dow) {
 // Synchronous best-effort travel time between two addresses, from cache, adjusted
 // for traffic at `departMin` (minutes-from-midnight) on weekday `dow`.
 // Returns { sec, exact, base, factor } or null if either endpoint isn't geocoded.
+function tomtomEnabled() { return DATA.settings.trafficProvider === "tomtom" && (DATA.settings.tomtomKey || "").trim() && DATA.settings.travelMode !== "transit"; }
+function ttBucket(min) { return Math.floor((((Math.round(min || 0) % 1440) + 1440) % 1440) / 30) * 30; }
+function ttKey(o, d, mode, departMin, dow) { return `${o.lat.toFixed(4)},${o.lon.toFixed(4)}|${d.lat.toFixed(4)},${d.lon.toFixed(4)}|${mode}|tt|${dow}|${ttBucket(departMin)}`; }
+const TT_TTL = 1000 * 60 * 60 * 24 * 3; // predictive pattern refreshes every 3 days
+
 function travelSecCached(originAddr, destAddr, mode, departMin, dow) {
   mode = mode || (DATA.settings.travelMode || "driving");
   const o = geocodeCached(originAddr), d = geocodeCached(destAddr);
   if (!o || !d) return null;
+  // TomTom live/predictive: real travel time for this weekday + time bucket.
+  if (tomtomEnabled()) {
+    const c = DATA.routeCache[ttKey(o, d, mode, departMin, dow)];
+    if (c && (Date.now() - (c.ts || 0) < TT_TTL)) return { sec: c.sec, exact: true, base: c.base, factor: c.factor, live: true };
+    // miss → show the free estimate now; the real value is fetched in the background
+    const base = routeCached(o, d, mode);
+    const f = trafficFactor(departMin, dow) || 1.15;
+    const est = base != null ? base : estimateSec(o, d, mode);
+    return { sec: Math.round(est * f), exact: false, base: est, factor: f };
+  }
+  // Free path: OSRM free-flow base × time-of-day factor.
   const base = routeCached(o, d, mode);
   const factor = trafficFactor(departMin, dow);
   if (base != null) return { sec: Math.round(base * factor), exact: true, base, factor };
@@ -142,14 +158,57 @@ async function googleDuration(o, d, mode) {
   } catch (e) { return null; }
 }
 
-// Fetch any travel pairs not yet cached, then re-render once. `pairs` = [{origin,dest}].
+// TomTom Routing with departAt → real predictive (or live) travel time.
+// Returns { sec, base, factor } where base = no-traffic time, factor = delay ratio.
+function isoDepartAt(dateISO, departMin) {
+  const d = new Date(dateISO + "T00:00:00");
+  d.setMinutes(departMin || 0);
+  const now = Date.now();
+  if (d.getTime() < now + 60000) d.setTime(now + 60000); // TomTom rejects past departAt
+  const off = -d.getTimezoneOffset(), sign = off >= 0 ? "+" : "-";
+  const p = n => String(Math.abs(n)).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00${sign}${p(Math.floor(Math.abs(off) / 60))}:${p(Math.abs(off) % 60)}`;
+}
+async function tomtomDuration(o, d, mode, departMin, dateISO) {
+  try {
+    const tm = mode === "walking" ? "pedestrian" : mode === "bicycle" ? "bicycle" : "car";
+    const departAt = encodeURIComponent(isoDepartAt(dateISO, departMin));
+    const url = `https://api.tomtom.com/routing/1/calculateRoute/${o.lat},${o.lon}:${d.lat},${d.lon}/json?key=${encodeURIComponent((DATA.settings.tomtomKey || "").trim())}&travelMode=${tm}&traffic=true&departAt=${departAt}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("tomtom " + r.status);
+    const j = await r.json();
+    const s = j.routes && j.routes[0] && j.routes[0].summary;
+    if (!s) return null;
+    const sec = s.travelTimeInSeconds;
+    const base = s.noTrafficTravelTimeInSeconds || sec;
+    return { sec, base, factor: base ? sec / base : 1 };
+  } catch (e) { return null; }
+}
+
+// Fetch any travel pairs not yet cached, then re-render once.
+// `pairs` = [{ origin, dest, whenMin, dow }] (whenMin/dow used only for TomTom).
 async function prefetchTravel(pairs, mode) {
   mode = mode || (DATA.settings.travelMode || "driving");
+  const today = (typeof todayISO === "function") ? todayISO() : new Date().toISOString().slice(0, 10);
   let changed = false;
-  for (const { origin, dest } of pairs) {
+  for (const { origin, dest, whenMin, dow } of pairs) {
     if (!origin || !dest) continue;
     const o = await geocode(origin), d = await geocode(dest);
     if (!o || !d) continue;
+
+    if (tomtomEnabled()) {
+      const key = ttKey(o, d, mode, whenMin, dow);
+      if (DATA.routeCache[key] && (Date.now() - DATA.routeCache[key].ts < TT_TTL)) continue;
+      if (travelInFlight.has(key)) continue;
+      travelInFlight.add(key);
+      const res = await tomtomDuration(o, d, mode, whenMin, today);
+      if (res) { DATA.routeCache[key] = { sec: res.sec, base: res.base, factor: res.factor, ts: Date.now() }; changed = true; }
+      travelInFlight.delete(key);
+      await new Promise(r => setTimeout(r, 350));
+      continue;
+    }
+
+    // Free path: cache the time-independent free-flow base (OSRM / Google / estimate).
     const key = routeKey(o, d, mode);
     if (DATA.routeCache[key] && (Date.now() - DATA.routeCache[key].ts < ROUTE_TTL)) continue;
     if (travelInFlight.has(key)) continue;
@@ -161,8 +220,7 @@ async function prefetchTravel(pairs, mode) {
     DATA.routeCache[key] = { sec, ts: Date.now() };
     travelInFlight.delete(key);
     changed = true;
-    // be polite to the free endpoints
-    await new Promise(r => setTimeout(r, 1100));
+    await new Promise(r => setTimeout(r, 1100)); // be polite to the free endpoints
   }
   if (changed) { saveLocal(); if (typeof render === "function") render(); }
 }

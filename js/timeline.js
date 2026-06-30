@@ -16,18 +16,19 @@ function intervalsOverlap(a, b) { return a.start < b.end && b.start < a.end; }
 function travelMin(originAddr, destAddr, pending, whenMin, dow) {
   if (!originAddr || !destAddr || normAddr(originAddr) === normAddr(destAddr)) return { min: 0, exact: true, none: true };
   const r = travelSecCached(originAddr, destAddr, DATA.settings.travelMode, whenMin, dow);
-  if (r && r.exact) return { min: Math.max(1, Math.round(r.sec / 60)), exact: true, factor: r.factor };
+  if (r && r.exact) return { min: Math.max(1, Math.round(r.sec / 60)), exact: true, factor: r.factor, live: r.live };
   // geocoded but no real route yet → show the rough estimate, fetch the real one
-  if (r && !r.exact) { if (pending) pending.push({ origin: originAddr, dest: destAddr }); return { min: Math.max(1, Math.round(r.sec / 60)), exact: false, approx: true, factor: r.factor }; }
+  if (r && !r.exact) { if (pending) pending.push({ origin: originAddr, dest: destAddr, whenMin, dow }); return { min: Math.max(1, Math.round(r.sec / 60)), exact: false, approx: true, factor: r.factor }; }
   // not even geocoded yet → fall back to the buffer and queue a lookup
-  if (pending) pending.push({ origin: originAddr, dest: destAddr });
+  if (pending) pending.push({ origin: originAddr, dest: destAddr, whenMin, dow });
   const factor = trafficFactor(whenMin, dow);
   return { min: Math.max(1, Math.round((DATA.settings.defaultTravelMin || 15) * factor)), exact: false, fallback: true, factor };
 }
 function travelSub(tv) {
   let s = tv.min + " min";
   if (tv.factor && tv.factor > 1.08) s += " · +" + Math.round((tv.factor - 1) * 100) + "% traffic";
-  if (!tv.exact) s += tv.fallback ? " · est." : " · approx";
+  if (tv.live && tv.exact) s += " · live";
+  else if (!tv.exact) s += tv.fallback ? " · est." : " · approx";
   return s;
 }
 

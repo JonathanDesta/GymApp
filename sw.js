@@ -1,7 +1,7 @@
 // Day — Life Manager service worker.
 // Bump CACHE_VERSION on every deploy so old caches are purged and the new build
 // reaches the installed PWA without a reinstall.
-const CACHE_VERSION = "day-v4";
+const CACHE_VERSION = "day-v5";
 
 // App shell precached on install. index.html and the JS modules are fetched
 // network-first below, so a stale copy here is only ever an offline fallback.
@@ -43,7 +43,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
 
   // Never touch external APIs / sign-in / calendar / maps — always go to network.
-  if (/(googleapis\.com|accounts\.google\.com|gstatic\.com|nominatim\.openstreetmap\.org|router\.project-osrm\.org|office365\.com|office\.com|outlook\.com|live\.com|maps\.googleapis\.com)/.test(url.host)) {
+  if (/(googleapis\.com|accounts\.google\.com|gstatic\.com|nominatim\.openstreetmap\.org|router\.project-osrm\.org|api\.tomtom\.com|office365\.com|office\.com|outlook\.com|live\.com|maps\.googleapis\.com)/.test(url.host)) {
     return;
   }
 
