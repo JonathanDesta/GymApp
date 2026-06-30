@@ -11,15 +11,24 @@
 function intervalsOverlap(a, b) { return a.start < b.end && b.start < a.end; }
 
 // Travel minutes between two addresses, using cache; records misses for prefetch.
-function travelMin(originAddr, destAddr, pending) {
-  if (!originAddr || !destAddr) return { min: 0, exact: true, none: true };
-  const r = travelSecCached(originAddr, destAddr, DATA.settings.travelMode);
-  if (r && r.exact) return { min: Math.max(1, Math.round(r.sec / 60)), exact: true };
+// Travel minutes between two addresses for a leg happening around `whenMin`
+// (the leg's clock time) on weekday `dow`, traffic-adjusted.
+function travelMin(originAddr, destAddr, pending, whenMin, dow) {
+  if (!originAddr || !destAddr || normAddr(originAddr) === normAddr(destAddr)) return { min: 0, exact: true, none: true };
+  const r = travelSecCached(originAddr, destAddr, DATA.settings.travelMode, whenMin, dow);
+  if (r && r.exact) return { min: Math.max(1, Math.round(r.sec / 60)), exact: true, factor: r.factor };
   // geocoded but no real route yet → show the rough estimate, fetch the real one
-  if (r && !r.exact) { if (pending) pending.push({ origin: originAddr, dest: destAddr }); return { min: Math.max(1, Math.round(r.sec / 60)), exact: false, approx: true }; }
+  if (r && !r.exact) { if (pending) pending.push({ origin: originAddr, dest: destAddr }); return { min: Math.max(1, Math.round(r.sec / 60)), exact: false, approx: true, factor: r.factor }; }
   // not even geocoded yet → fall back to the buffer and queue a lookup
   if (pending) pending.push({ origin: originAddr, dest: destAddr });
-  return { min: DATA.settings.defaultTravelMin || 15, exact: false, fallback: true };
+  const factor = trafficFactor(whenMin, dow);
+  return { min: Math.max(1, Math.round((DATA.settings.defaultTravelMin || 15) * factor)), exact: false, fallback: true, factor };
+}
+function travelSub(tv) {
+  let s = tv.min + " min";
+  if (tv.factor && tv.factor > 1.08) s += " · +" + Math.round((tv.factor - 1) * 100) + "% traffic";
+  if (!tv.exact) s += tv.fallback ? " · est." : " · approx";
+  return s;
 }
 
 // Find the earliest free gap of >= need minutes within [from,until], not colliding
@@ -75,47 +84,14 @@ function computeTimeline(dateISO) {
     .map(t => ({ id: t.id, kind: "task", title: t.name, location: t.location || "", startMin: hmToMin(t.fixedStart), endMin: hmToMin(t.fixedStart) + (t.durMin || 30) }));
   const anchored = events.concat(fixedTasks).sort((a, b) => a.startMin - b.startMin);
 
-  // group consecutive out-of-home commitments into outings (stay out between them)
-  const GROUP_GAP = 90;
-  let outings = [];
+  // Place each commitment (travel legs are added later by the chain pass, so each
+  // leg can use the right origin/destination and the traffic at its clock time).
+  const GROUP_GAP = 90; // gap (min) above which you'd return home between stops
   anchored.forEach(ev => {
-    const located = !!(ev.location && ev.location.trim());
-    const last = outings[outings.length - 1];
-    if (located && last && last.located && ev.startMin - last.end <= GROUP_GAP) {
-      last.items.push(ev); last.end = Math.max(last.end, ev.endMin);
-    } else {
-      outings.push({ located, items: [ev], start: ev.startMin, end: ev.endMin });
-    }
-  });
-
-  // place each outing with travel
-  outings.forEach(grp => {
-    // detect overlaps between consecutive commitments inside the day
-    grp.items.forEach((ev, i) => {
-      const loc = ev.location || "";
-      // travel before the first item of a located outing (from home)
-      if (i === 0 && grp.located && home) {
-        const tv = travelMin(home, loc, pending);
-        const depart = ev.startMin - tv.min;
-        add({ start: depart, end: ev.startMin, type: "travel", label: "Travel → " + (ev.title || "out"), sub: tv.min + " min" + (tv.exact ? "" : tv.fallback ? " (est.)" : " (approx)"), status: "ok", location: loc });
-      } else if (i > 0) {
-        const prev = grp.items[i - 1];
-        const gapTravel = travelMin(prev.location || home, loc, pending);
-        if (gapTravel.min > 0 && ev.startMin - prev.endMin >= gapTravel.min) {
-          add({ start: ev.startMin - gapTravel.min, end: ev.startMin, type: "travel", label: "Travel → " + (ev.title || "next"), sub: gapTravel.min + " min", status: "ok", location: loc });
-        }
-      }
-      // the commitment itself
-      const status = ev.startMin < morningEnd ? "conflict" : "ok";
-      if (status === "conflict") conflicts.push(`"${ev.title}" at ${fmtClock(ev.startMin)} starts before your morning routine finishes (${fmtClock(morningEnd)}).`);
-      add({ start: ev.startMin, end: Math.max(ev.endMin, ev.startMin + 5), type: ev.kind, label: ev.title, sub: ev.allDay ? "all day" : fmtClock(ev.startMin) + "–" + fmtClock(ev.endMin), status, location: loc, source: ev.source });
-    });
-    // travel home after a located outing
-    if (grp.located && home) {
-      const lastItem = grp.items[grp.items.length - 1];
-      const tv = travelMin(lastItem.location || home, home, pending);
-      add({ start: lastItem.endMin, end: lastItem.endMin + tv.min, type: "travel", label: "Travel home", sub: tv.min + " min", status: "ok", location: home });
-    }
+    const loc = ev.location || "";
+    const status = ev.startMin < morningEnd ? "conflict" : "ok";
+    if (status === "conflict") conflicts.push(`"${ev.title}" at ${fmtClock(ev.startMin)} starts before your morning routine finishes (${fmtClock(morningEnd)}).`);
+    add({ start: ev.startMin, end: Math.max(ev.endMin, ev.startMin + 5), type: ev.kind, label: ev.title, sub: ev.allDay ? "all day" : fmtClock(ev.startMin) + "–" + fmtClock(ev.endMin), status, location: loc, source: ev.source });
   });
 
   // overlaps among fixed commitments
@@ -125,21 +101,22 @@ function computeTimeline(dateISO) {
         conflicts.push(`"${anchored[i].title}" and "${anchored[j].title}" overlap.`);
 
   // ── 3. Workout block (flexible, prefers its depart time) ──
+  // Reserve the gap as travel + workout + travel (home round-trip estimate at the
+  // preferred departure time); the actual travel legs/origins are set by the chain.
   const workMin = workoutSkippedFor(dateISO) ? 0 : workoutDurationMin(dateISO);
   if (workMin > 0) {
     const gym = S.gymAddress;
-    const tTo = travelMin(home, gym, pending);
-    const tBack = travelMin(gym, home, pending);
-    const need = tTo.min + workMin + tBack.min;
     const pref = workoutDepartMin(dateISO);
+    const tTo = travelMin(home, gym, pending, pref, dow);
+    const tBack = travelMin(gym, home, pending, pref + tTo.min + workMin, dow);
+    const need = tTo.min + workMin + tBack.min;
     const place = findGap(occupied, Math.min(morningEnd, pref), bedMin - nDur, need, pref);
     if (place == null) {
       conflicts.push(`Workout (${need} min incl. travel) doesn't fit before bed — adjust the gym time or shorten the day.`);
     } else {
       const moved = Math.abs(place - pref) > 5;
-      if (gym && tTo.min > 0) add({ start: place, end: place + tTo.min, type: "travel", label: "Travel → gym", sub: tTo.min + " min", status: "ok", location: gym });
-      add({ start: place + tTo.min, end: place + tTo.min + workMin, type: "workout", label: "Workout", sub: `${workMin} min · ${workoutBlockName(DATA.workout.blockId)}` + (moved ? ` · moved from ${fmtClock(pref)}` : ""), status: moved ? "moved" : "ok", go: "Workout" });
-      if (gym && tBack.min > 0) add({ start: place + tTo.min + workMin, end: place + need, type: "travel", label: "Travel home", sub: tBack.min + " min", status: "ok", location: home });
+      // the workout sits at the gym; the chain pass adds travel to/from it.
+      add({ start: place + tTo.min, end: place + tTo.min + workMin, type: "workout", label: "Workout", sub: `${workMin} min · ${workoutBlockName(workoutBlockState().blockId)}` + (moved ? ` · moved from ${fmtClock(pref)}` : ""), status: moved ? "moved" : "ok", go: "Workout", location: gym });
       if (moved) conflicts.push(`Workout moved to ${fmtClock(place)} (your ${fmtClock(pref)} slot was taken).`);
     }
   }
@@ -151,6 +128,45 @@ function computeTimeline(dateISO) {
     if (place == null) { conflicts.push(`Task "${t.name}" (${need} min) doesn't fit today.`); return; }
     add({ start: place, end: place + need, type: "task", label: t.name, sub: `${need} min`, status: "ok", taskId: t.id });
   });
+
+  // ── 4b. Travel chain ──
+  // For every located block, the inbound leg starts from where you'll be directly
+  // before it (the previous located block) and the outbound leg goes to where you
+  // go directly after — defaulting to home when there's nothing adjacent. Each leg
+  // is timed for its own clock time so traffic is estimated for that moment.
+  const stops = segments
+    .filter(s => s.location && normAddr(s.location) !== normAddr(home) && (s.type === "event" || s.type === "task" || s.type === "workout"))
+    .sort((a, b) => a.start - b.start);
+  let prevLoc = home, prevEnd = wakeMin;
+  stops.forEach(stop => {
+    const gap = stop.start - prevEnd;
+    let wentHome = false;
+    // long gap since the last stop → you return home in between
+    if (prevLoc && normAddr(prevLoc) !== normAddr(home) && gap > GROUP_GAP) {
+      const tv = travelMin(prevLoc, home, pending, prevEnd, dow);
+      if (tv.min > 0) add({ start: prevEnd, end: prevEnd + tv.min, type: "travel", label: "Travel home", sub: travelSub(tv), status: "ok", location: home });
+      prevLoc = home;
+      wentHome = true;
+    }
+    const origin = (prevLoc && normAddr(prevLoc) !== normAddr(home)) ? prevLoc : home;
+    const tv = travelMin(origin, stop.location, pending, stop.start, dow);
+    if (tv.min > 0) {
+      const depart = stop.start - tv.min;
+      let status = "ok";
+      if (!wentHome && normAddr(origin) !== normAddr(home) && depart < prevEnd - 1) {
+        // a fixed commitment you genuinely can't reach in time is a conflict;
+        // the flexible workout can just start later, so flag it softly as "tight".
+        if (stop.type === "workout") status = "tight";
+        else { status = "conflict"; conflicts.push(`Only ${Math.max(0, gap)} min to get from your previous stop to "${stop.label}", but the drive is ~${tv.min} min${tv.factor > 1.08 ? " in traffic" : ""}.`); }
+      }
+      add({ start: depart, end: stop.start, type: "travel", label: "Travel → " + stop.label, sub: travelSub(tv), status, location: stop.location });
+    }
+    prevLoc = stop.location; prevEnd = stop.end;
+  });
+  if (prevLoc && normAddr(prevLoc) !== normAddr(home)) {
+    const tv = travelMin(prevLoc, home, pending, prevEnd, dow);
+    if (tv.min > 0) add({ start: prevEnd, end: prevEnd + tv.min, type: "travel", label: "Travel home", sub: travelSub(tv), status: "ok", location: home });
+  }
 
   // ── 5. Nighttime routine — ends at bedtime ──
   if (nDur > 0) {
@@ -175,11 +191,10 @@ function computeTimeline(dateISO) {
   let leaveBy = null;
   for (const d of departures) { if (nowMin < 0 || d.start >= nowMin) { leaveBy = { min: d.start, label: d.label.replace("Travel → ", "") }; break; } }
   let wakeBy = null;
-  const firstLocated = outings.find(g => g.located);
+  const firstLocated = anchored.find(a => a.location && a.location.trim());
   if (firstLocated && home) {
-    const ev = firstLocated.items[0];
-    const tv = travelMin(home, ev.location, pending);
-    wakeBy = ev.startMin - tv.min - mDur;
+    const tv = travelMin(home, firstLocated.location, pending, firstLocated.startMin, dow);
+    wakeBy = firstLocated.startMin - tv.min - mDur;
   }
 
   const busyMin = all.filter(s => s.type !== "free").reduce((m, s) => m + (s.end - s.start), 0);

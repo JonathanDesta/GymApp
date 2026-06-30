@@ -45,6 +45,8 @@ function defaultData() {
       wakeTime: "07:00",
       bedTime: "23:00",
       travelMode: "driving",        // driving | walking | transit (transit needs Google key)
+      trafficProvider: "free",      // "free" = time-of-day estimate, "none" = no traffic
+      trafficIntensity: 0.5,        // 0..1 rush-hour severity for the free estimate
       mapsApiKey: "",               // optional Google key for live/traffic travel time
       defaultTravelMin: 15,         // fallback buffer when no route can be computed
       workoutAppUrl: "https://jonathandesta.github.io/oly-tracker/", // embedded in the Workout tab

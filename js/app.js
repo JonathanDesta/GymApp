@@ -119,6 +119,7 @@ function todayView() {
 function badgeFor(s) {
   if (s.status === "conflict") return ` <span class="bdg red">conflict</span>`;
   if (s.status === "moved") return ` <span class="bdg amber">moved</span>`;
+  if (s.status === "tight") return ` <span class="bdg amber">tight</span>`;
   if (s.source === "outlook") return ` <span class="bdg blue">school</span>`;
   if (s.source === "google") return ` <span class="bdg green">cal</span>`;
   return "";
@@ -176,6 +177,18 @@ function settingsView() {
     <div class="frow"><label>Travel mode</label>
       <select id="sMode" class="sel">${["driving", "walking", "transit"].map(m => `<option ${S.travelMode === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
     <div class="frow"><label>Fallback travel buffer</label><input id="sBuf" type="number" inputmode="numeric" class="sel" style="width:80px" value="${S.defaultTravelMin || 15}"> min</div>
+    <div class="frow"><label>Traffic estimate</label>
+      <select id="sTraffic" class="sel">
+        <option value="free" ${S.trafficProvider !== "none" ? "selected" : ""}>Time-of-day estimate (free)</option>
+        <option value="none" ${S.trafficProvider === "none" ? "selected" : ""}>Off (free-flow)</option>
+      </select></div>
+    <div class="frow"><label>Rush-hour severity</label>
+      <select id="sTrafInt" class="sel">
+        <option value="0.3" ${(S.trafficIntensity || 0.5) <= 0.35 ? "selected" : ""}>Light</option>
+        <option value="0.5" ${(S.trafficIntensity || 0.5) > 0.35 && (S.trafficIntensity || 0.5) < 0.65 ? "selected" : ""}>Moderate</option>
+        <option value="0.8" ${(S.trafficIntensity || 0.5) >= 0.65 ? "selected" : ""}>Heavy</option>
+      </select></div>
+    <div class="hint">The free estimate scales drive time by the typical rush-hour pattern at each trip's time of day — busier at the 8 AM and 5 PM peaks, lighter midday and at night. No key, no cost.</div>
     <div class="frow"><label>Google Maps key (optional)</label><input id="sMapKey" class="sel" style="width:100%" placeholder="leave blank to use free routing" value="${escapeAttr(S.mapsApiKey || "")}"></div>
     <div class="hint">Free mode uses OpenStreetMap + OSRM — no key, no cost. A Maps key adds live traffic & transit but may bill beyond Google's free tier.</div>
   </div>`;
@@ -209,6 +222,8 @@ function bindSettings() {
   bind("#sGym", v => { S.gymAddress = v.trim(); });
   bind("#sMode", v => S.travelMode = v);
   bind("#sBuf", v => S.defaultTravelMin = parseInt(v, 10) || 15);
+  bind("#sTraffic", v => S.trafficProvider = v);
+  bind("#sTrafInt", v => S.trafficIntensity = parseFloat(v));
   bind("#sMapKey", v => S.mapsApiKey = v.trim());
   bind("#sWkUrl", v => S.workoutAppUrl = v.trim());
   bind("#sWake", v => S.wakeTime = v);

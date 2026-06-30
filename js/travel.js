@@ -62,15 +62,43 @@ function routeCached(o, d, mode) {
   return null;
 }
 
-// Synchronous best-effort travel time (seconds) between two addresses, from cache.
-// Returns { sec, exact } or null if both endpoints aren't geocoded yet.
-function travelSecCached(originAddr, destAddr, mode) {
+// ── Time-of-day traffic model (free, no key) ──
+// Scales free-flow drive time by a rush-hour curve evaluated at the clock time
+// the leg actually happens. Two Gaussian bumps (AM + PM peaks) on weekdays, a
+// gentle midday bump on weekends, scaled by a user "traffic intensity" (0..1).
+function trafficFactor(departMin, dow) {
+  const S = DATA.settings;
+  if (S.trafficProvider === "none" || S.travelMode === "transit") return 1;
+  if ((S.mapsApiKey || "").trim()) return 1; // Google routes already include live traffic
+  if (departMin == null) return 1;
+  const intensity = (S.trafficIntensity != null ? S.trafficIntensity : 0.5);
+  if (intensity <= 0) return 1;
+  const m = ((Math.round(departMin) % 1440) + 1440) % 1440;
+  const weekend = (dow === "Sat" || dow === "Sun");
+  const bell = (center, width, amp) => { const x = (m - center) / width; return amp * Math.exp(-(x * x) / 2); };
+  let f = 1;
+  if (!weekend) {
+    f += bell(8 * 60, 65, 1.0 * intensity);       // AM peak ~8:00
+    f += bell(17 * 60 + 15, 80, 1.2 * intensity); // PM peak ~5:15
+    f += bell(12 * 60, 130, 0.25 * intensity);    // midday
+  } else {
+    f += bell(13 * 60, 170, 0.45 * intensity);    // weekend midday
+  }
+  return Math.max(1, f);
+}
+
+// Synchronous best-effort travel time between two addresses, from cache, adjusted
+// for traffic at `departMin` (minutes-from-midnight) on weekday `dow`.
+// Returns { sec, exact, base, factor } or null if either endpoint isn't geocoded.
+function travelSecCached(originAddr, destAddr, mode, departMin, dow) {
   mode = mode || (DATA.settings.travelMode || "driving");
   const o = geocodeCached(originAddr), d = geocodeCached(destAddr);
   if (!o || !d) return null;
-  const r = routeCached(o, d, mode);
-  if (r != null) return { sec: r, exact: true };
-  return { sec: estimateSec(o, d, mode), exact: false };
+  const base = routeCached(o, d, mode);
+  const factor = trafficFactor(departMin, dow);
+  if (base != null) return { sec: Math.round(base * factor), exact: true, base, factor };
+  const est = estimateSec(o, d, mode);
+  return { sec: Math.round(est * factor), exact: false, base: est, factor };
 }
 
 // ── Live fetch (background) ──
