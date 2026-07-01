@@ -51,7 +51,6 @@ const PRESET_SETTINGS = {
   wakeTime: "08:30",
   bedTime: "00:45",          // 12:45 AM (after midnight — the timeline rolls it over)
   travelMode: "driving",
-  trafficProvider: "tomtom", // live/predictive; falls back to the free estimate until a key is added
 };
 const PRESET_WORKOUT = {
   departTime: "15:00",       // leave the house for the gym ~3:00 PM
@@ -72,6 +71,7 @@ function defaultData() {
     updated: null,
     migratedNoWorkBlocks: false, // one-time: drop website/content from morning routine
     presetApplied: false,        // one-time: seed Jonathan's personal preset onto an existing install
+    regeocodedTomTom: false,     // one-time: clear stale geocodes/routes so TomTom re-resolves them
     // Routines (morning + nighttime) — same timed runner engine.
     routineConfig: { steps: [] },
     nightConfig: { steps: [] },
@@ -88,8 +88,7 @@ function defaultData() {
       flexCalendarIds: [],          // calendars whose events are flexible work blocks
       outlookIcsUrl: "",
       corsProxy: "",                // optional, for Outlook ICS if it blocks CORS
-      trafficIntensity: 0.5,        // 0..1 rush-hour severity for the free estimate
-      tomtomKey: "",                // free TomTom API key for live/predictive traffic
+      tomtomKey: "",                // free TomTom API key for live/predictive traffic (+ geocoding)
       mapsApiKey: "",               // optional Google key for live/traffic travel time
       defaultTravelMin: 15,         // fallback buffer when no route can be computed
       workoutAppUrl: "https://jonathandesta.github.io/oly-tracker/", // embedded in the Workout tab
@@ -147,6 +146,14 @@ function normalizeData() {
     if (DATA.routineConfig && Array.isArray(DATA.routineConfig.steps))
       DATA.routineConfig.steps = DATA.routineConfig.steps.filter(s => s.id !== "website" && s.id !== "content");
     DATA.migratedNoWorkBlocks = true;
+  }
+
+  // One-time: drop geocodes/routes cached under the old free-geocoder + heuristic
+  // so addresses re-resolve through TomTom and travel times become real-traffic.
+  if (!DATA.regeocodedTomTom) {
+    DATA.places = {};
+    DATA.routeCache = {};
+    DATA.regeocodedTomTom = true;
   }
 
   if (!Array.isArray(DATA.routineLog)) DATA.routineLog = [];

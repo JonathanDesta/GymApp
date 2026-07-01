@@ -24,21 +24,42 @@ function geocodeCached(addr) {
   if (p && p.lat != null && (Date.now() - (p.ts || 0) < GEOCODE_TTL)) return p;
   return null;
 }
-async function geocode(addr) {
-  if (!addr) return null;
-  const cached = geocodeCached(addr);
-  if (cached) return cached;
+// TomTom's geocoder resolves business/POI names ("Crunch Chamblee") that the free
+// Nominatim geocoder often can't — the usual reason a TomTom travel time never loads.
+async function tomtomGeocode(addr) {
+  const key = (DATA.settings.tomtomKey || "").trim();
+  if (!key) return null;
+  try {
+    const url = "https://api.tomtom.com/search/2/geocode/" + encodeURIComponent(addr) + ".json?limit=1&key=" + encodeURIComponent(key);
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("ttgeo " + r.status);
+    const j = await r.json();
+    const res = j.results && j.results[0];
+    if (!res || !res.position) return null;
+    return { lat: res.position.lat, lon: res.position.lon, label: (res.address && res.address.freeformAddress) || addr, ts: Date.now() };
+  } catch (e) { return null; }
+}
+async function nominatimGeocode(addr) {
   try {
     const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(addr);
     const r = await fetch(url, { headers: { "Accept": "application/json" } });
     if (!r.ok) throw new Error("geocode " + r.status);
     const j = await r.json();
     if (!j.length) return null;
-    const place = { lat: parseFloat(j[0].lat), lon: parseFloat(j[0].lon), label: j[0].display_name, ts: Date.now() };
-    DATA.places[normAddr(addr)] = place;
-    saveLocal();
-    return place;
+    return { lat: parseFloat(j[0].lat), lon: parseFloat(j[0].lon), label: j[0].display_name, ts: Date.now() };
   } catch (e) { return null; }
+}
+async function geocode(addr) {
+  if (!addr) return null;
+  const cached = geocodeCached(addr);
+  if (cached) return cached;
+  // Prefer TomTom (far better at business/POI names); fall back to free Nominatim.
+  let place = await tomtomGeocode(addr);
+  if (!place) place = await nominatimGeocode(addr);
+  if (!place) return null;
+  DATA.places[normAddr(addr)] = place;
+  saveLocal();
+  return place;
 }
 
 // ── Distance / fallback ──
@@ -62,59 +83,36 @@ function routeCached(o, d, mode) {
   return null;
 }
 
-// ── Time-of-day traffic model (free, no key) ──
-// Scales free-flow drive time by a rush-hour curve evaluated at the clock time
-// the leg actually happens. Two Gaussian bumps (AM + PM peaks) on weekdays, a
-// gentle midday bump on weekends, scaled by a user "traffic intensity" (0..1).
-function trafficFactor(departMin, dow) {
-  const S = DATA.settings;
-  if (S.trafficProvider === "none" || S.travelMode === "transit") return 1;
-  if ((S.mapsApiKey || "").trim()) return 1; // Google routes already include live traffic
-  if (departMin == null) return 1;
-  const intensity = (S.trafficIntensity != null ? S.trafficIntensity : 0.5);
-  if (intensity <= 0) return 1;
-  const m = ((Math.round(departMin) % 1440) + 1440) % 1440;
-  const weekend = (dow === "Sat" || dow === "Sun");
-  const bell = (center, width, amp) => { const x = (m - center) / width; return amp * Math.exp(-(x * x) / 2); };
-  let f = 1;
-  if (!weekend) {
-    f += bell(8 * 60, 65, 1.0 * intensity);       // AM peak ~8:00
-    f += bell(17 * 60 + 15, 80, 1.2 * intensity); // PM peak ~5:15
-    f += bell(12 * 60, 130, 0.25 * intensity);    // midday
-  } else {
-    f += bell(13 * 60, 170, 0.45 * intensity);    // weekend midday
-  }
-  return Math.max(1, f);
-}
-
-// Synchronous best-effort travel time between two addresses, from cache, adjusted
-// for traffic at `departMin` (minutes-from-midnight) on weekday `dow`.
-// Returns { sec, exact, base, factor } or null if either endpoint isn't geocoded.
-function tomtomEnabled() { return DATA.settings.trafficProvider === "tomtom" && (DATA.settings.tomtomKey || "").trim() && DATA.settings.travelMode !== "transit"; }
+// ── Real-traffic providers only (no time-of-day heuristic) ──
+// Travel time comes from TomTom's live/predictive routing (priced for each trip's
+// own weekday + departure-time bucket) or, if a Google Maps key is set, Google's
+// live-traffic Distance Matrix. There is NO fabricated "rush-hour" scaling — until
+// a real value has loaded we show a plain free-flow placeholder, clearly labeled
+// "approx", and replace it the moment the real number arrives.
+function tomtomEnabled() { return !!(DATA.settings.tomtomKey || "").trim() && DATA.settings.travelMode !== "transit" && !(DATA.settings.mapsApiKey || "").trim(); }
 function ttBucket(min) { return Math.floor((((Math.round(min || 0) % 1440) + 1440) % 1440) / 30) * 30; }
 function ttKey(o, d, mode, departMin, dow) { return `${o.lat.toFixed(4)},${o.lon.toFixed(4)}|${d.lat.toFixed(4)},${d.lon.toFixed(4)}|${mode}|tt|${dow}|${ttBucket(departMin)}`; }
 const TT_TTL = 1000 * 60 * 60 * 24 * 3; // predictive pattern refreshes every 3 days
 
+// Synchronous best-effort travel time between two addresses, from cache.
+// Returns { sec, exact, base, factor, live } or null if either endpoint isn't geocoded.
 function travelSecCached(originAddr, destAddr, mode, departMin, dow) {
   mode = mode || (DATA.settings.travelMode || "driving");
   const o = geocodeCached(originAddr), d = geocodeCached(destAddr);
   if (!o || !d) return null;
-  // TomTom live/predictive: real travel time for this weekday + time bucket.
+  // TomTom live/predictive: the real travel time for this weekday + time bucket.
   if (tomtomEnabled()) {
     const c = DATA.routeCache[ttKey(o, d, mode, departMin, dow)];
     if (c && (Date.now() - (c.ts || 0) < TT_TTL)) return { sec: c.sec, exact: true, base: c.base, factor: c.factor, live: true };
-    // miss → show the free estimate now; the real value is fetched in the background
-    const base = routeCached(o, d, mode);
-    const f = trafficFactor(departMin, dow) || 1.15;
-    const est = base != null ? base : estimateSec(o, d, mode);
-    return { sec: Math.round(est * f), exact: false, base: est, factor: f };
+    // real value not fetched yet → provisional free-flow placeholder (no traffic scaling)
+    const est = estimateSec(o, d, mode);
+    return { sec: est, exact: false, base: est };
   }
-  // Free path: OSRM free-flow base × time-of-day factor.
+  // Google Distance Matrix (live traffic) stores its result in routeCache when a Maps key is set.
   const base = routeCached(o, d, mode);
-  const factor = trafficFactor(departMin, dow);
-  if (base != null) return { sec: Math.round(base * factor), exact: true, base, factor };
+  if (base != null) return { sec: base, exact: true, base };
   const est = estimateSec(o, d, mode);
-  return { sec: Math.round(est * factor), exact: false, base: est, factor };
+  return { sec: est, exact: false, base: est };
 }
 
 // ── Live fetch (background) ──

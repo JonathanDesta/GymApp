@@ -255,20 +255,8 @@ function settingsView() {
     <div class="frow"><label>Travel mode</label>
       <select id="sMode" class="sel">${["driving", "walking", "transit"].map(m => `<option ${S.travelMode === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
     <div class="frow"><label>Fallback travel buffer</label><input id="sBuf" type="number" inputmode="numeric" class="sel" style="width:80px" value="${S.defaultTravelMin || 15}"> min</div>
-    <div class="frow"><label>Traffic</label>
-      <select id="sTraffic" class="sel">
-        <option value="tomtom" ${S.trafficProvider === "tomtom" ? "selected" : ""}>TomTom live & predictive</option>
-        <option value="free" ${S.trafficProvider === "free" ? "selected" : ""}>Time-of-day estimate (free)</option>
-        <option value="none" ${S.trafficProvider === "none" ? "selected" : ""}>Off (free-flow)</option>
-      </select></div>
     <div class="frow"><label>TomTom API key</label><input id="sTomKey" class="sel" style="width:100%" placeholder="free key from developer.tomtom.com" value="${escapeAttr(S.tomtomKey || "")}"></div>
-    <div class="frow"><label>Rush-hour severity (free mode)</label>
-      <select id="sTrafInt" class="sel">
-        <option value="0.3" ${(S.trafficIntensity || 0.5) <= 0.35 ? "selected" : ""}>Light</option>
-        <option value="0.5" ${(S.trafficIntensity || 0.5) > 0.35 && (S.trafficIntensity || 0.5) < 0.65 ? "selected" : ""}>Moderate</option>
-        <option value="0.8" ${(S.trafficIntensity || 0.5) >= 0.65 ? "selected" : ""}>Heavy</option>
-      </select></div>
-    <div class="hint"><b>TomTom</b> gives real predicted traffic for each trip's exact time — free tier, no credit card (sign up at developer.tomtom.com, create a key, paste it above). Until a live value loads, the free time-of-day estimate is shown as a placeholder. <b>Free mode</b> needs no key and approximates rush hour by time of day.</div>
+    <div class="hint">Travel times use <b>real predicted / live traffic from TomTom</b> — priced for each trip's own departure time. Free tier, no credit card: sign up at developer.tomtom.com, create a key, paste it above. TomTom also geocodes your addresses (it handles business names like "Crunch Chamblee" that free maps miss). Until a real value loads you'll briefly see a rough <i>approx</i> placeholder; the <b>fallback buffer</b> above is only used when an address can't be located at all.</div>
     <div class="frow"><label>Google Maps key (optional)</label><input id="sMapKey" class="sel" style="width:100%" placeholder="leave blank to use free routing" value="${escapeAttr(S.mapsApiKey || "")}"></div>
     <div class="hint">Free mode uses OpenStreetMap + OSRM — no key, no cost. A Maps key adds live traffic & transit but may bill beyond Google's free tier.</div>
   </div>`;
@@ -300,13 +288,13 @@ function bindSettings() {
   const cn = $("#sConnect"); if (cn) cn.onclick = connectGoogle;
   bind("#sIcs", v => S.outlookIcsUrl = v.trim());
   bind("#sProxy", v => S.corsProxy = v.trim());
-  bind("#sHome", v => { S.homeAddress = v.trim(); });
-  bind("#sGym", v => { S.gymAddress = v.trim(); });
+  // Changing an address drops its cached geocode so it re-resolves (via TomTom).
+  bind("#sHome", v => { S.homeAddress = v.trim(); if (typeof normAddr === "function") delete DATA.places[normAddr(v.trim())]; });
+  bind("#sGym", v => { S.gymAddress = v.trim(); if (typeof normAddr === "function") delete DATA.places[normAddr(v.trim())]; });
   bind("#sMode", v => S.travelMode = v);
   bind("#sBuf", v => S.defaultTravelMin = parseInt(v, 10) || 15);
-  bind("#sTraffic", v => S.trafficProvider = v);
-  bind("#sTomKey", v => S.tomtomKey = v.trim());
-  bind("#sTrafInt", v => S.trafficIntensity = parseFloat(v));
+  // A new/changed TomTom key invalidates cached routes so they refetch with it.
+  bind("#sTomKey", v => { S.tomtomKey = v.trim(); DATA.routeCache = {}; });
   bind("#sMapKey", v => S.mapsApiKey = v.trim());
   bind("#sWkUrl", v => S.workoutAppUrl = v.trim());
   bind("#sWake", v => S.wakeTime = v);

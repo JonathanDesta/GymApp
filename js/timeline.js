@@ -18,11 +18,10 @@ function travelMin(originAddr, destAddr, pending, whenMin, dow) {
   const r = travelSecCached(originAddr, destAddr, DATA.settings.travelMode, whenMin, dow);
   if (r && r.exact) return { min: Math.max(1, Math.round(r.sec / 60)), exact: true, factor: r.factor, live: r.live };
   // geocoded but no real route yet → show the rough estimate, fetch the real one
-  if (r && !r.exact) { if (pending) pending.push({ origin: originAddr, dest: destAddr, whenMin, dow }); return { min: Math.max(1, Math.round(r.sec / 60)), exact: false, approx: true, factor: r.factor }; }
-  // not even geocoded yet → fall back to the buffer and queue a lookup
+  if (r && !r.exact) { if (pending) pending.push({ origin: originAddr, dest: destAddr, whenMin, dow }); return { min: Math.max(1, Math.round(r.sec / 60)), exact: false, approx: true }; }
+  // not even geocoded yet → plain fallback buffer (no fabricated traffic) + queue a lookup
   if (pending) pending.push({ origin: originAddr, dest: destAddr, whenMin, dow });
-  const factor = trafficFactor(whenMin, dow);
-  return { min: Math.max(1, Math.round((DATA.settings.defaultTravelMin || 15) * factor)), exact: false, fallback: true, factor };
+  return { min: Math.max(1, Math.round(DATA.settings.defaultTravelMin || 15)), exact: false, fallback: true };
 }
 function travelSub(tv) {
   let s = tv.min + " min";
