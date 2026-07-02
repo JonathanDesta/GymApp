@@ -15,7 +15,7 @@ detects conflicts and back-solves wake/leave times.
 - **Source of truth (edit here):** `C:\LifeManager`
 - **Deployed to:** GitHub repo **`JonathanDesta/GymApp`**, branch `main`
 - **Live URL (installed on the user's iPhone as a PWA):** https://jonathandesta.github.io/GymApp/
-- **Current service-worker cache version:** `day-v10` (in `sw.js`)
+- **Current service-worker cache version:** `day-v15` (in `sw.js`)
 - The repo is **PUBLIC** — never hard-code secrets (keys, Outlook feed URL) into source.
 
 > Note: `C:\GymApp` is a DIFFERENT, older app (the original Routines+Lifts app). The
@@ -86,7 +86,8 @@ js/state.js     DATA model, defaults, PRESET, migrations, persistence, Google
 js/routines.js  morning/night SEEDs, alarm/wake-lock, the timed step runner, drops
 js/workout.js   workout-duration mirror + embedded oly-tracker iframe + oly_state sync
 js/calendar.js  Google Calendar + Outlook .ics fetch/parse → normalized events
-js/travel.js    geocode (Nominatim) + routing (OSRM) + traffic factor + TomTom
+js/travel.js    geocode (TomTom-first, Nominatim fallback) + TomTom live/predictive
+                routing (departAt); OSRM free-flow only as a no-key fallback
 js/timeline.js  computeTimeline(dateISO) — THE SOLVER
 js/app.js       render() dispatcher, tabs, Today view, look-ahead, settings, init
 ```
@@ -116,7 +117,7 @@ DATA = {
   settings: { googleClientId, googleCalEnabled, googleCalendarIds[],
               flexCalendarIds[], outlookIcsUrl, corsProxy,
               homeAddress, gymAddress, wakeTime, bedTime,
-              travelMode, trafficProvider, trafficIntensity, tomtomKey,
+              travelMode, tomtomKey,
               mapsApiKey, defaultTravelMin, workoutAppUrl },
   olyState: { data:<oly_state>, ts } | null,   // synced snapshot of the workout app
   places:    { normAddr -> {lat,lon,ts} },     // geocode cache
@@ -196,9 +197,11 @@ To test tomorrow's look-ahead: put events in `DATA.calCache[tomorrowISO()]`, the
 - **Calendars** (`calendar.js`): Google (read-only, via GSI token; `googleCalendarIds`
   fixed + `flexCalendarIds` flexible) and Outlook published `.ics` (parsed locally, basic
   RRULE expansion, optional `corsProxy`).
-- **Travel + traffic** (`travel.js`): free Nominatim+OSRM by default; `trafficFactor`
-  scales by time-of-day (AM/PM peaks, `trafficIntensity`); optional **TomTom** live/
-  predictive via `departAt` (`tomtomKey`, time-bucketed cache). Optional Google Maps key.
+- **Travel + traffic** (`travel.js`): REAL traffic only — **TomTom** live/predictive
+  via `departAt` (`tomtomKey`, cached per weekday + 30-min bucket, 3-day TTL). TomTom's
+  Search API also geocodes (handles POI names; Nominatim is the no-key fallback).
+  No fabricated time-of-day scaling exists (removed in day-v14); before a real value
+  loads, a plainly-labeled "approx" free-flow placeholder shows. Optional Google Maps key.
 - **Master timeline** (`timeline.js` + Today view in `app.js`): §6 above.
 - **Night routine "before I go out"** (`timeline.js` §5 + Today adjustments): per-day
   `nightMode`/`nightOutTime`.
@@ -218,9 +221,9 @@ The user enters these once in **Settings**; they persist on-device + Drive:
   with authorized origin `https://jonathandesta.github.io`, Calendar + Drive APIs enabled.
   Until set: no Drive sync, no Google Calendar. (See SETUP.md.)
 - **Outlook `.ics` feed URL** (school calendar). May be CORS-blocked → `corsProxy`.
-- **TomTom API key** (free, no card) for live traffic; without it, the free time-of-day
-  estimate is used.
-- **Connect Google** (sync chip, top-right) — makes settings permanent/cross-device.
+- **TomTom API key** (free, no card) for live/predictive traffic AND geocoding; without
+  it, travel times fall back to free-flow OSRM (no traffic) and Nominatim geocoding.
+- **Connect Google** (sync pill under the title) — makes settings permanent/cross-device.
 
 ---
 
@@ -242,6 +245,13 @@ The user enters these once in **Settings**; they persist on-device + Drive:
 7. **bedTime "00:45" is after midnight** — timeline rolls `bedMin` past 1440 (handled);
    watch for off-by-a-day if you touch that math.
 8. Traffic heuristic is an approximation; only TomTom is "real."
+9. **`seedOlyDown()` has no recency guard** — it overwrites local `oly_state` with
+   `DATA.olyState` whenever they differ, with no timestamp check. Safe in normal use
+   (Day's embedded iframe is the sole writer and `captureOlyState()` runs on
+   tab-leave/poll/visibilitychange, so they stay in sync), but if a stale snapshot
+   ever wins a Drive reconcile while local is newer, a just-logged workout could be
+   clobbered. Not fixed: can't verify on localhost (oly_state is different-origin
+   there). If touching the sync bridge, capture-then-compare before seeding.
 
 ---
 

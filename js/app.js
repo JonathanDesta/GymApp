@@ -50,7 +50,7 @@ function todayView() {
     <div class="hero-row">
       <div><div class="hero-k">Wake</div><div class="hero-v">${fmtClock(tl.wakeMin)}</div></div>
       <div><div class="hero-k">Bed</div><div class="hero-v">${fmtClock(tl.bedMin)}</div></div>
-      <div><div class="hero-k">Busy</div><div class="hero-v">${Math.round(tl.busyMin / 60)}h ${tl.busyMin % 60}m</div></div>
+      <div><div class="hero-k">Busy</div><div class="hero-v">${Math.floor(tl.busyMin / 60)}h ${tl.busyMin % 60}m</div></div>
     </div>`;
   if (tl.leaveBy) h += `<div class="hero-leave">⏱ Leave by <b>${fmtClock(tl.leaveBy.min)}</b> → ${escapeHtml(tl.leaveBy.label)}</div>`;
   if (tl.wakeBy != null && tl.wakeBy < tl.wakeMin) h += `<div class="hero-warn">⚠ Wake by <b>${fmtClock(tl.wakeBy)}</b> to make your first commitment on time.</div>`;

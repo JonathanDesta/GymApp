@@ -35,7 +35,7 @@ Both the calendar read and the Drive sync use **one** Google sign-in.
    - Paste the Client ID into **Google Client ID**.
    - Tick **Use Google Calendar**.
    - (Optional) list extra calendar IDs, comma-separated. `primary` = your main calendar.
-   - Tap the **sync chip** (top-right) and approve the Google consent screen.
+   - Tap the **connect Google** pill (under the title) and approve the Google consent screen.
 
 Scopes requested: `calendar.readonly` (read events) + `drive.file` (only the one
 sync file this app creates — it can't see anything else in your Drive).
@@ -62,17 +62,25 @@ for the day you're viewing.
 
 ---
 
-## 4. Travel time
+## 4. Travel time — real traffic via TomTom (recommended, free)
 
-- **Free mode (default, no key, no cost):** addresses are geocoded with
-  OpenStreetMap **Nominatim**; driving time comes from the public **OSRM** server.
-  Set **Home address** and **Gym address** in Settings. Walking/transit without a
-  key are estimated from road distance.
-- **Optional Google Maps key:** paste a Maps **JavaScript API** key in Settings for
-  live, traffic-aware times and proper transit. This *can* bill beyond Google's
-  monthly free credit — leave it blank to stay 100% free.
+1. Sign up at <https://developer.tomtom.com> (free tier, no credit card).
+2. Create an API key and paste it into **Settings → TomTom API key**.
+3. Set **Home address** and **Gym address** in Settings.
 
-Results are cached, so the free endpoints are hit rarely (a few times a day).
+With the key set, every trip uses TomTom's **real live/predictive traffic for that
+trip's own departure time**, and TomTom also geocodes your addresses (it handles
+business names like "Crunch Chamblee"). Until a real value loads you'll briefly see
+a rough placeholder labeled *approx*. There is no fabricated "rush hour" estimate.
+
+- **Without a TomTom key:** addresses are geocoded with OpenStreetMap Nominatim and
+  driving time comes from the public OSRM server — free-flow only, **no traffic**.
+- **Optional Google Maps key:** paste a Maps **JavaScript API** key for Google's
+  live-traffic times and proper transit instead. This *can* bill beyond Google's
+  monthly free credit — leave it blank to stay free.
+
+Results are cached (predictions per weekday + 30-min slot, refreshed every ~3 days),
+so the APIs are hit rarely.
 
 ---
 
